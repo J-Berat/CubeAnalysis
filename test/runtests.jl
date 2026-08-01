@@ -10,6 +10,7 @@ function write_cube(path, cube)
 end
 
 @testset "CubeAnalysis" begin
+    @test !CubeAnalysis.save_data(Dict("run" => Dict()))
     cube = reshape(Float32.(1:512), 8, 8, 8)
     gx, gy, gz = periodic_gradient(cube, 8.0)
     @test size(gx) == size(cube)
@@ -113,6 +114,7 @@ end
             formats = ["png"]
             sample_stride = 2
             atomic_directory = true
+            save_data = true
 
             [plots]
             summary = true
@@ -211,6 +213,7 @@ end
             output_dir = "$hdf5_output"
             field_by_field = true
             memory_budget_gb = 0.01
+            save_data = true
 
             [plots]
             summary = true
@@ -242,6 +245,7 @@ end
             input_dir = "$input_dir"
             output_dir = "$series_output"
             field_by_field = true
+            save_data = true
 
             [plots]
             summary = true

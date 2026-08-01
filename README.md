@@ -1,9 +1,9 @@
 # CubeAnalysis
 
 Configurable Julia pipeline for systematic analysis of three-dimensional FITS
-and HDF5 cubes. It produces quality reports, CSV summaries, maps, distributions,
+and HDF5 cubes. It produces maps, distributions,
 phase diagrams, conditional relations, scalar/vector spectra, HRO alignment,
-structure functions, autocorrelations and physical plasma diagnostics.
+structure functions and optional numerical data products.
 
 ## Run
 
@@ -12,8 +12,9 @@ julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 ```
 
 Relative paths are resolved from the TOML file. Outputs are written atomically
-and inputs are never modified. `overwrite=false` applies to figures, CSV and
-TOML products.
+and inputs are never modified. By default only figures are saved. Set
+`save_data=true` explicitly to write CSV/TOML products. `overwrite=false`
+applies to every enabled output.
 
 ## Memory modes
 
@@ -23,6 +24,7 @@ field_by_field = true
 memory_budget_gb = 32
 sample_stride = 37
 atomic_directory = true
+save_data = false
 ```
 
 `field_by_field=true` reloads only the fields needed by the active analysis
@@ -151,12 +153,13 @@ time = 1.0
 input_dir = "/data/run/output_00020"
 ```
 
-Each snapshot gets an isolated subdirectory and `snapshot_evolution.csv`
-combines its field statistics for temporal comparison.
+Each snapshot gets an isolated subdirectory. CSV/TOML files, including
+`snapshot_evolution.csv`, are written only when `[run].save_data = true`; that
+file combines field statistics for temporal comparison.
 
 ## Reproducibility
 
-`analysis_manifest.toml` embeds the resolved configuration, Julia and package
+When `save_data=true`, `analysis_manifest.toml` embeds the resolved configuration, Julia and package
 version information, generated files, and per-stage timing. `input_quality.csv`
 reports NaN, infinities and non-positive values. The committed `Manifest.toml`
 allows `Pkg.instantiate()` and `Pkg.test()` without the former unregistered

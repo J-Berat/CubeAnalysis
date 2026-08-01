@@ -189,6 +189,8 @@ function requested(cfg, name::AbstractString; default=false)
     return Bool(get(get(cfg, "plots", Dict()), name, default))
 end
 
+save_data(cfg) = Bool(get(cfg["run"], "save_data", false))
+
 function selected_fields(settings, fields)
     names = string.(get(settings, "fields", sort!(collect(keys(fields)))))
     missing = filter(name -> !haskey(fields, name), names)
@@ -540,14 +542,16 @@ function plot_relations!(files, fields, metadata, cfg, output_dir, formats, over
             bins=Int(get(spec, "bins", 30)),
             minimum=Int(get(spec, "minimum_per_bin", 100)), logx, logy, weights)
         isempty(centers) && (@warn "No populated bins for relation" name; continue)
-        path = joinpath(output_dir, "relation_$(sanitize(name)).csv")
-        write_text_output(path; overwrite) do io
-            println(io, "x_center,samples,y_mean,y_std")
-            for index in eachindex(centers)
-                @printf(io, "%.8e,%d,%.8e,%.8e\n", centers[index], counts[index], means[index], deviations[index])
+        if save_data(cfg)
+            path = joinpath(output_dir, "relation_$(sanitize(name)).csv")
+            write_text_output(path; overwrite) do io
+                println(io, "x_center,samples,y_mean,y_std")
+                for index in eachindex(centers)
+                    @printf(io, "%.8e,%d,%.8e,%.8e\n", centers[index], counts[index], means[index], deviations[index])
+                end
             end
+            push!(files, path)
         end
-        push!(files, path)
         lower = max.(means .- deviations, logy ? eps(Float64) : -Inf)
         fig = Figure(size=(760, 520))
         ax = latex_axis(fig[1, 1], title=replace(name, '_' => ' '),
@@ -670,15 +674,17 @@ function plot_alignments!(files, fields, metadata, cfg, output_dir, formats, ove
             bootstrap_seed=Int(get(spec, "bootstrap_seed", 1234)),
             bootstrap_max_samples=Int(get(spec, "bootstrap_max_samples", 20_000)),
             return_uncertainty=true)
-        path = joinpath(output_dir, "alignment_$(sanitize(name)).csv")
-        write_text_output(path; overwrite) do io
-            println(io, "condition_center,samples,zeta,zeta_bootstrap_std")
-            for index in eachindex(centers)
-                @printf(io, "%.8e,%d,%.8e,%.8e\n", centers[index], samples[index],
-                    zeta[index], zeta_std[index])
+        if save_data(cfg)
+            path = joinpath(output_dir, "alignment_$(sanitize(name)).csv")
+            write_text_output(path; overwrite) do io
+                println(io, "condition_center,samples,zeta,zeta_bootstrap_std")
+                for index in eachindex(centers)
+                    @printf(io, "%.8e,%d,%.8e,%.8e\n", centers[index], samples[index],
+                        zeta[index], zeta_std[index])
+                end
             end
+            push!(files, path)
         end
-        push!(files, path)
         fig = Figure(size=(1050, 520))
         angle_label = angle_coordinate == "cosine" ? "|cos(angle)|" : "angle [deg]"
         ax1 = latex_axis(fig[1, 1], title="HRO ($(weighting) weighting)", xlabel=angle_label,
@@ -749,9 +755,9 @@ function run_analysis_config(cfg::AbstractDict)
 
     @info "Prepared cube fields" input_dir=cfg["run"]["input_dir"] size=analysis_field_size(fields, first(keys(fields))) fields=sort!(collect(keys(fields))) field_by_field=(fields isa LazyFieldStore)
     stages = Tuple{String,Function}[]
-    requested(cfg, "quality"; default=true) && push!(stages,
+    save_data(cfg) && requested(cfg, "quality"; default=true) && push!(stages,
         ("quality", () -> write_quality_report!(files, fields, metadata, output_dir; overwrite)))
-    requested(cfg, "summary"; default=true) && push!(stages,
+    save_data(cfg) && requested(cfg, "summary"; default=true) && push!(stages,
         ("summary", () -> write_summary!(files, fields, metadata, output_dir, stride; overwrite)))
     requested(cfg, "slices") && push!(stages,
         ("slices", () -> plot_slices!(files, fields, metadata, cfg, output_dir, formats, overwrite)))
@@ -773,7 +779,7 @@ function run_analysis_config(cfg::AbstractDict)
             output_dir, formats, overwrite)))
     requested(cfg, "alignments") && push!(stages,
         ("alignments", () -> plot_alignments!(files, fields, metadata, cfg, output_dir, formats, overwrite)))
-    requested(cfg, "advanced_diagnostics") && push!(stages,
+    save_data(cfg) && requested(cfg, "advanced_diagnostics") && push!(stages,
         ("advanced_diagnostics", () -> write_advanced_diagnostics!(files, fields, metadata,
             cfg, output_dir, overwrite)))
     requested(cfg, "topology") && push!(stages,
@@ -789,7 +795,7 @@ function run_analysis_config(cfg::AbstractDict)
         timed_stage!(timings, index, length(stages), name, action)
         fields isa LazyFieldStore && GC.gc(false)
     end
-    write_manifest!(files, cfg, output_dir, fields; overwrite, timings)
+    save_data(cfg) && write_manifest!(files, cfg, output_dir, fields; overwrite, timings)
     if atomic_directory
         relative_files = relpath.(files, Ref(output_dir))
         publish_output_directory(output_dir, final_output_dir; overwrite)
@@ -826,12 +832,14 @@ function run_snapshot_series(cfg::AbstractDict)
             end
         end
     end
-    evolution = joinpath(parent_output, "snapshot_evolution.csv")
-    write_text_output(evolution; overwrite) do io
-        println(io, "snapshot,time,field,label,unit,nx,ny,nz,finite_samples,minimum,q01,median,mean,std,q99,maximum")
-        foreach(line -> println(io, line), rows)
+    if save_data(cfg)
+        evolution = joinpath(parent_output, "snapshot_evolution.csv")
+        write_text_output(evolution; overwrite) do io
+            println(io, "snapshot,time,field,label,unit,nx,ny,nz,finite_samples,minimum,q01,median,mean,std,q99,maximum")
+            foreach(line -> println(io, line), rows)
+        end
+        push!(series_files, evolution)
     end
-    push!(series_files, evolution)
     fields = sort!(unique!(reduce(vcat, [result.fields for result in results]; init=String[])))
     return AnalysisResult(parent_output, series_files, fields)
 end

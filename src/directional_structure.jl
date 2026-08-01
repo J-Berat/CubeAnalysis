@@ -79,35 +79,39 @@ function plot_directional_structure!(files, fields, metadata, cfg, output_dir, f
             lags=get(spec, "lags", nothing), orders=Int.(get(spec, "orders", [1, 2, 3, 4])),
             box_size, axis_order, periodic)
         isempty(rows) && (@warn "No directional increments" name; continue)
-        path = joinpath(output_dir, "directional_structure_$(sanitize(name)).csv")
         orders = rows[1].orders
-        write_text_output(path; overwrite) do io
-            columns = ["axis", "lag_cells", "separation", "samples", "skewness", "flatness"]
-            for order in orders, component in ("longitudinal", "transverse", "full")
-                push!(columns, "$(component)_S$(order)")
-            end
-            println(io, join(columns, ','))
-            for row in rows
-                values = Any[row.axis, row.lag_cells, row.separation, row.samples, row.skewness, row.flatness]
-                for order_index in eachindex(orders)
-                    append!(values, (row.longitudinal[order_index], row.transverse[order_index], row.full[order_index]))
+        if save_data(cfg)
+            path = joinpath(output_dir, "directional_structure_$(sanitize(name)).csv")
+            write_text_output(path; overwrite) do io
+                columns = ["axis", "lag_cells", "separation", "samples", "skewness", "flatness"]
+                for order in orders, component in ("longitudinal", "transverse", "full")
+                    push!(columns, "$(component)_S$(order)")
                 end
-                println(io, join(values, ','))
+                println(io, join(columns, ','))
+                for row in rows
+                    values = Any[row.axis, row.lag_cells, row.separation, row.samples, row.skewness, row.flatness]
+                    for order_index in eachindex(orders)
+                        append!(values, (row.longitudinal[order_index], row.transverse[order_index], row.full[order_index]))
+                    end
+                    println(io, join(values, ','))
+                end
             end
+            push!(files, path)
         end
-        push!(files, path)
         separations = getfield.(rows, :separation)
         fit_range = Float64.(get(spec, "fit_range", [minimum(separations), maximum(separations)]))
         fits = directional_scaling_exponents(rows, fit_range)
-        fit_path = joinpath(output_dir, "directional_structure_$(sanitize(name))_fits.csv")
-        write_text_output(fit_path; overwrite) do io
-            println(io, "axis,order,component,exponent,exponent_std,points")
-            for fit in fits
-                @printf(io, "%s,%d,%s,%.8e,%.8e,%d\n", fit.axis, fit.order,
-                    fit.component, fit.exponent, fit.exponent_std, fit.points)
+        if save_data(cfg)
+            fit_path = joinpath(output_dir, "directional_structure_$(sanitize(name))_fits.csv")
+            write_text_output(fit_path; overwrite) do io
+                println(io, "axis,order,component,exponent,exponent_std,points")
+                for fit in fits
+                    @printf(io, "%s,%d,%s,%.8e,%.8e,%d\n", fit.axis, fit.order,
+                        fit.component, fit.exponent, fit.exponent_std, fit.points)
+                end
             end
+            push!(files, fit_path)
         end
-        push!(files, fit_path)
         second_index = findfirst(==(2), orders)
         if !isnothing(second_index)
             fig = Figure(size=(900, 550)); ax = latex_axis(fig[1, 1], xscale=log10, yscale=log10,

@@ -82,25 +82,27 @@ function plot_anisotropic_spectra!(files, fields, metadata, cfg, output_dir, for
             perpendicular_bins=Int(get(spec, "perpendicular_bins", 32)),
             radial_bins=Int(get(spec, "radial_bins", 32)), box_size, axis_order,
             remove_mean=Bool(get(spec, "remove_mean", true)))
-        map_path = joinpath(output_dir, "anisotropic_spectrum_$(sanitize(name)).csv")
-        write_text_output(map_path; overwrite) do io
-            println(io, "k_parallel,k_perpendicular,power_mean,modes")
-            for j in eachindex(result.perpendicular_centers), i in eachindex(result.parallel_centers)
-                @printf(io, "%.8e,%.8e,%.8e,%d\n", result.parallel_centers[i],
-                    result.perpendicular_centers[j], result.power[i, j], result.modes[i, j])
+        if save_data(cfg)
+            map_path = joinpath(output_dir, "anisotropic_spectrum_$(sanitize(name)).csv")
+            write_text_output(map_path; overwrite) do io
+                println(io, "k_parallel,k_perpendicular,power_mean,modes")
+                for j in eachindex(result.perpendicular_centers), i in eachindex(result.parallel_centers)
+                    @printf(io, "%.8e,%.8e,%.8e,%d\n", result.parallel_centers[i],
+                        result.perpendicular_centers[j], result.power[i, j], result.modes[i, j])
+                end
             end
-        end
-        push!(files, map_path)
-        wedge_path = joinpath(output_dir, "anisotropic_wedges_$(sanitize(name)).csv")
-        write_text_output(wedge_path; overwrite) do io
-            println(io, "k,parallel_power,perpendicular_power,parallel_modes,perpendicular_modes,ratio")
-            for i in eachindex(result.k)
-                ratio = result.perpendicular[i] > 0 ? result.parallel[i] / result.perpendicular[i] : NaN
-                @printf(io, "%.8e,%.8e,%.8e,%d,%d,%.8e\n", result.k[i], result.parallel[i],
-                    result.perpendicular[i], result.parallel_modes[i], result.perpendicular_modes[i], ratio)
+            push!(files, map_path)
+            wedge_path = joinpath(output_dir, "anisotropic_wedges_$(sanitize(name)).csv")
+            write_text_output(wedge_path; overwrite) do io
+                println(io, "k,parallel_power,perpendicular_power,parallel_modes,perpendicular_modes,ratio")
+                for i in eachindex(result.k)
+                    ratio = result.perpendicular[i] > 0 ? result.parallel[i] / result.perpendicular[i] : NaN
+                    @printf(io, "%.8e,%.8e,%.8e,%d,%d,%.8e\n", result.k[i], result.parallel[i],
+                        result.perpendicular[i], result.parallel_modes[i], result.perpendicular_modes[i], ratio)
+                end
             end
+            push!(files, wedge_path)
         end
-        push!(files, wedge_path)
         fig = Figure(size=(850, 650)); ax = latex_axis(fig[1, 1], xlabel="k∥", ylabel="k⊥",
             title="$(replace(name, '_' => ' ')); b̂=$(round.(result.direction; digits=3))")
         shown = log10.(result.power)

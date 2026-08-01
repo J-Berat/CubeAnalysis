@@ -99,16 +99,18 @@ function plot_topology!(files, fields, metadata, cfg, output_dir, formats, overw
         results = [excursion_metrics(field, threshold;
             above=Bool(get(spec, "above", true)), periodic, box_size, axis_order)
             for threshold in thresholds]
-        path = joinpath(output_dir, "topology_$(sanitize(name)).csv")
-        write_text_output(path; overwrite) do io
-            println(io, "threshold,volume_fraction,surface_area,surface_density,components,largest_fraction,spans_x,spans_y,spans_z")
-            for result in results
-                @printf(io, "%.8e,%.8e,%.8e,%.8e,%d,%.8e,%s,%s,%s\n", result.threshold,
-                    result.volume_fraction, result.surface_area, result.surface_density,
-                    result.components, result.largest_fraction, result.spans...)
+        if save_data(cfg)
+            path = joinpath(output_dir, "topology_$(sanitize(name)).csv")
+            write_text_output(path; overwrite) do io
+                println(io, "threshold,volume_fraction,surface_area,surface_density,components,largest_fraction,spans_x,spans_y,spans_z")
+                for result in results
+                    @printf(io, "%.8e,%.8e,%.8e,%.8e,%d,%.8e,%s,%s,%s\n", result.threshold,
+                        result.volume_fraction, result.surface_area, result.surface_density,
+                        result.components, result.largest_fraction, result.spans...)
+                end
             end
+            push!(files, path)
         end
-        push!(files, path)
         fig = Figure(size=(1050, 480))
         ax1 = latex_axis(fig[1, 1], xlabel=field_label(field_name, metadata[field_name]),
             ylabel="fraction", title="Excursion-set morphology")

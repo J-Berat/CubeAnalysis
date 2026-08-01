@@ -164,16 +164,18 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
             bins=Int(get(spec, "bins", 80)), box_size, axis_order,
             remove_mean=Bool(get(spec, "remove_mean", true)), weight,
             weight_power=Float64(get(spec, "weight_power", 0.5)))
-        path = joinpath(output_dir, "vector_spectrum_$(sanitize(name)).csv")
-        write_text_output(path; overwrite) do io
-            println(io, "k_physical,total_shell,solenoidal_shell,compressive_shell,compressive_fraction,modes")
-            for i in eachindex(result.k)
-                fraction = result.total[i] > 0 ? result.compressive[i] / result.total[i] : NaN
-                @printf(io, "%.8e,%.8e,%.8e,%.8e,%.8e,%d\n", result.k[i], result.total[i],
-                    result.solenoidal[i], result.compressive[i], fraction, result.modes[i])
+        if save_data(cfg)
+            path = joinpath(output_dir, "vector_spectrum_$(sanitize(name)).csv")
+            write_text_output(path; overwrite) do io
+                println(io, "k_physical,total_shell,solenoidal_shell,compressive_shell,compressive_fraction,modes")
+                for i in eachindex(result.k)
+                    fraction = result.total[i] > 0 ? result.compressive[i] / result.total[i] : NaN
+                    @printf(io, "%.8e,%.8e,%.8e,%.8e,%.8e,%d\n", result.k[i], result.total[i],
+                        result.solenoidal[i], result.compressive[i], fraction, result.modes[i])
+                end
             end
+            push!(files, path)
         end
-        push!(files, path)
         fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1], xscale=log10, yscale=log10,
             xlabel="k [physical]", ylabel="shell energy", title=replace(name, '_' => ' '))
         lines!(ax, result.k, result.total; label=latex_legend_label("total"), linewidth=2.5)
@@ -231,16 +233,18 @@ function plot_cross_spectra!(files, fields, cfg, output_dir, formats, overwrite)
             context="cross FFT '$name'")
         result = cross_spectrum_details(fields[first], fields[second];
             bins=Int(get(spec, "bins", 80)), box_size, axis_order)
-        path = joinpath(output_dir, "cross_spectrum_$(sanitize(name)).csv")
-        write_text_output(path; overwrite) do io
-            println(io, "k_physical,cross_real,cross_imag,cross_amplitude,coherence,modes")
-            for i in eachindex(result.k)
-                @printf(io, "%.8e,%.8e,%.8e,%.8e,%.8e,%d\n", result.k[i],
-                    real(result.cross[i]), imag(result.cross[i]), abs(result.cross[i]),
-                    result.coherence[i], result.modes[i])
+        if save_data(cfg)
+            path = joinpath(output_dir, "cross_spectrum_$(sanitize(name)).csv")
+            write_text_output(path; overwrite) do io
+                println(io, "k_physical,cross_real,cross_imag,cross_amplitude,coherence,modes")
+                for i in eachindex(result.k)
+                    @printf(io, "%.8e,%.8e,%.8e,%.8e,%.8e,%d\n", result.k[i],
+                        real(result.cross[i]), imag(result.cross[i]), abs(result.cross[i]),
+                        result.coherence[i], result.modes[i])
+                end
             end
+            push!(files, path)
         end
-        push!(files, path)
         fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1], xscale=log10,
             xlabel="k [physical]", ylabel="coherence", title=replace(name, '_' => ' '))
         lines!(ax, result.k, result.coherence; linewidth=2.5); ylims!(ax, 0, 1.05)
@@ -277,22 +281,24 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
         fit_range = Float64.(get(settings, "fit_range", [minimum(result.k), maximum(result.k)]))
         length(fit_range) == 2 || error("spectra.fit_range needs two values")
         slope, slope_std, fit_modes = spectral_fit(result.k, power, fit_range)
-        path = joinpath(output_dir, "spectrum_$(sanitize(name)).csv")
-        write_text_output(path; overwrite) do io
-            println(io, "k_physical,power_mean,power_shell,modes,compensated")
-            for index in eachindex(result.k)
-                @printf(io, "%.8e,%.8e,%.8e,%d,%.8e\n", result.k[index],
-                    result.average[index], result.shell[index], result.modes[index], compensated[index])
+        if save_data(cfg)
+            path = joinpath(output_dir, "spectrum_$(sanitize(name)).csv")
+            write_text_output(path; overwrite) do io
+                println(io, "k_physical,power_mean,power_shell,modes,compensated")
+                for index in eachindex(result.k)
+                    @printf(io, "%.8e,%.8e,%.8e,%d,%.8e\n", result.k[index],
+                        result.average[index], result.shell[index], result.modes[index], compensated[index])
+                end
             end
+            push!(files, path)
+            fit_path = joinpath(output_dir, "spectrum_$(sanitize(name))_fit.toml")
+            write_text_output(fit_path; overwrite) do io
+                TOML.print(io, Dict("slope" => slope, "slope_std" => slope_std,
+                    "points" => fit_modes, "k_min" => fit_range[1], "k_max" => fit_range[2],
+                    "quantity" => quantity, "window" => window); sorted=true)
+            end
+            push!(files, fit_path)
         end
-        push!(files, path)
-        fit_path = joinpath(output_dir, "spectrum_$(sanitize(name))_fit.toml")
-        write_text_output(fit_path; overwrite) do io
-            TOML.print(io, Dict("slope" => slope, "slope_std" => slope_std,
-                "points" => fit_modes, "k_min" => fit_range[1], "k_max" => fit_range[2],
-                "quantity" => quantity, "window" => window); sorted=true)
-        end
-        push!(files, fit_path)
         fig = Figure(size=(760, 520))
         ylabel = compensation == 0 ? "P(k)" : "k^$(compensation) P(k)"
         box_unit = string(get(get(cfg, "grid", Dict()), "box_unit", "L"))

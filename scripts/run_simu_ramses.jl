@@ -179,6 +179,7 @@ function main(args)
         joinpath(root, "results", "CubeAnalysis_$(Dates.format(today(), "yyyy-mm-dd"))")
     base_path = normpath(joinpath(@__DIR__, "..", "config", "cube_analysis.toml"))
     base = CubeAnalysis.load_config(base_path)
+    save_outputs = CubeAnalysis.save_data(base)
     simulations = simulation_directories(root)
     isempty(simulations) && error("No complete simulation found under $root")
     if length(args) >= 3
@@ -194,12 +195,12 @@ function main(args)
     for (index, input_dir) in enumerate(simulations)
         name = basename(input_dir)
         output_dir = joinpath(output_root, name)
-        if isfile(joinpath(output_dir, "analysis_manifest.toml"))
+        if isdir(output_dir) && (!save_outputs || isfile(joinpath(output_dir, "analysis_manifest.toml")))
             shape, box_size, _ = cube_geometry(joinpath(input_dir, "density.fits"))
             @info "Already complete; skipping" index total=length(simulations) name
             push!(rows, (; simulation=name, status="skipped_complete", elapsed=0.0,
                 shape, box_size, output=output_dir, message="manifest already present"))
-            write_report(report_path, rows)
+            save_outputs && write_report(report_path, rows)
             continue
         end
         free = available_gib(output_root)
@@ -222,14 +223,14 @@ function main(args)
         elapsed = round(time() - started; digits=3)
         push!(rows, (; simulation=name, status, elapsed, shape, box_size,
             output=output_dir, message))
-        write_report(report_path, rows)
+        save_outputs && write_report(report_path, rows)
         GC.gc(true)
     end
     complete = count(row -> row.status in ("complete", "skipped_complete"), rows)
-    ensemble = write_ensemble_tables(output_root, simulations)
-    @info "Batch finished" complete total=length(rows) report=report_path available_gib=available_gib(output_root)
-    @info "Ensemble comparison tables" files=ensemble
-    complete == length(rows) || error("$(length(rows) - complete) simulation(s) failed; see $report_path")
+    ensemble = save_outputs ? write_ensemble_tables(output_root, simulations) : String[]
+    @info "Batch finished" complete total=length(rows) report=(save_outputs ? report_path : "disabled") available_gib=available_gib(output_root)
+    save_outputs && @info "Ensemble comparison tables" files=ensemble
+    complete == length(rows) || error("$(length(rows) - complete) simulation(s) failed")
 end
 
 if abspath(PROGRAM_FILE) == abspath(@__FILE__)

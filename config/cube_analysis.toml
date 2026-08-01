@@ -5,6 +5,7 @@ output_dir = "../outputs/example"
 formats = ["png", "pdf"]
 overwrite = true
 atomic_directory = true
+save_data = false # set true only when CSV/TOML outputs are explicitly wanted
 sample_stride = 37
 field_by_field = true
 # Set to 0 for unlimited. FFT/HRO stages fail early if their working set is larger.
