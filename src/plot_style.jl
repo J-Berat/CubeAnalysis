@@ -3,6 +3,11 @@ function latex_escape_text(value)
     output = IOBuffer()
     index = 1
     while index <= length(characters)
+        if index + 4 <= length(characters) && String(characters[index:index + 4]) == "log10"
+            print(output, "\\log_{10}")
+            index += 5
+            continue
+        end
         character = characters[index]
         if character == '^'
             stop = index + 1
@@ -19,7 +24,7 @@ function latex_escape_text(value)
             print(output, "\\wedge ")
         elseif character == '\\'
             print(output, "\\backslash ")
-        elseif character in ('{', '}', '_', '%', '&', '#', '$')
+        elseif character in ('{', '}', '%', '&', '#', '$')
             print(output, '\\', character)
         elseif character == '~'
             print(output, "\\sim ")

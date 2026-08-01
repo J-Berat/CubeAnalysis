@@ -18,6 +18,9 @@ end
     @test !style_axis.ygridvisible[]
     @test !style_axis.xminorgridvisible[]
     @test !style_axis.yminorgridvisible[]
+    @test occursin("v_x", string(CubeAnalysis.latex_text("v_x")))
+    @test !occursin(raw"v\_x", string(CubeAnalysis.latex_text("v_x")))
+    @test occursin(raw"\log_{10}", string(CubeAnalysis.latex_text("log10 v_x")))
     @test CubeAnalysis.latex_layout_label(style_figure[0, 1], "must be hidden") === nothing
     equilibrium_temperature = 5000.0
     equilibrium_density = CubeAnalysis.thermal_equilibrium_density(equilibrium_temperature)

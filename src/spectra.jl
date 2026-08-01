@@ -327,7 +327,8 @@ function plot_cross_spectra!(files, fields, cfg, output_dir, formats, overwrite)
             push!(files, path)
         end
         fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1], xscale=log10,
-            xlabel="k [physical]", ylabel="coherence", title=replace(name, '_' => ' '))
+            xlabel=latexstring("k\\ [\\mathrm{physical}]"),
+            ylabel=latexstring("\\mathcal{C}(k)"), title=replace(name, '_' => ' '))
         lines!(ax, result.k, result.coherence; linewidth=2.5); ylims!(ax, 0, 1.05)
         add_nyquist_marker!(ax, analysis_field_size(fields, first), box_size,
             axis_order; logarithmic_coordinates=false)

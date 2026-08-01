@@ -839,13 +839,14 @@ function plot_alignments!(files, fields, metadata, cfg, output_dir, formats, ove
             push!(files, path)
         end
         fig = Figure(size=(1050, 520))
-        angle_label = angle_coordinate == "cosine" ? "|cos(angle)|" : "angle [deg]"
+        angle_label = angle_coordinate == "cosine" ? latexstring("|\\cos\\phi|") :
+            latexstring("\\phi\\ [^{\\circ}]")
         ax1 = latex_axis(fig[1, 1], title="HRO ($(weighting) weighting)", xlabel=angle_label,
             ylabel=field_label(condition_name, metadata[condition_name]), yscale=log10)
         hm = heatmap!(ax1, angles, centers, permutedims(histogram); colormap=:viridis)
         latex_colorbar(fig[1, 2], hm, label="normalized gradient weight")
         ax2 = latex_axis(fig[1, 3], title="Alignment parameter", xlabel=field_label(condition_name, metadata[condition_name]),
-            ylabel="zeta", xscale=log10)
+            ylabel=latexstring("\\zeta"), xscale=log10)
         hlines!(ax2, [0.0]; color=:gray50, linestyle=:dash)
         valid = findall(isfinite, zeta)
         if !isempty(valid)
