@@ -54,6 +54,10 @@ function latex_axis(parent; kwargs...)
     for key in (:xlabel, :ylabel)
         haskey(options, key) && (options[key] = latex_text(options[key]))
     end
+    options[:xgridvisible] = false
+    options[:ygridvisible] = false
+    options[:xminorgridvisible] = false
+    options[:yminorgridvisible] = false
     get!(options, :xtickformat, latex_tickformat)
     get!(options, :ytickformat, latex_tickformat)
     return Axis(parent; options...)

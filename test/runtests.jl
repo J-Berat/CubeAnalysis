@@ -14,6 +14,10 @@ end
     style_figure = CubeAnalysis.Figure()
     style_axis = CubeAnalysis.latex_axis(style_figure[1, 1]; title="must be hidden", xlabel="x")
     @test isempty(style_axis.title[])
+    @test !style_axis.xgridvisible[]
+    @test !style_axis.ygridvisible[]
+    @test !style_axis.xminorgridvisible[]
+    @test !style_axis.yminorgridvisible[]
     @test CubeAnalysis.latex_layout_label(style_figure[0, 1], "must be hidden") === nothing
     equilibrium_temperature = 5000.0
     equilibrium_density = CubeAnalysis.thermal_equilibrium_density(equilibrium_temperature)
