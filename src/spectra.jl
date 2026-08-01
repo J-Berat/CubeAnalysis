@@ -145,6 +145,12 @@ function vector_spectrum_details(vx, vy, vz; bins=80, box_size=(2π, 2π, 2π),
         compressive=compressive[keep], modes=modes[keep])
 end
 
+function log_spectrum_coordinates(k, power)
+    valid = findall(index -> isfinite(k[index]) && k[index] > 0 &&
+        isfinite(power[index]) && power[index] > 0, eachindex(k, power))
+    return log10.(k[valid]), log10.(power[valid])
+end
+
 function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats, overwrite)
     grid = get(cfg, "grid", Dict())
     box_size = get(grid, "box_size", 1.0)
@@ -176,11 +182,16 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
             end
             push!(files, path)
         end
-        fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1], xscale=log10, yscale=log10,
-            xlabel="k [physical]", ylabel="shell energy", title=replace(name, '_' => ' '))
-        lines!(ax, result.k, result.total; label=latex_legend_label("total"), linewidth=2.5)
-        lines!(ax, result.k, result.solenoidal; label=latex_legend_label("solenoidal"), linewidth=2)
-        lines!(ax, result.k, result.compressive; label=latex_legend_label("compressive"), linewidth=2)
+        box_unit = string(get(grid, "box_unit", "L"))
+        fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1],
+            xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
+            ylabel=latexstring("\\log_{10}E(k)"), title=replace(name, '_' => ' '))
+        logk, logtotal = log_spectrum_coordinates(result.k, result.total)
+        lines!(ax, logk, logtotal; label=latex_legend_label("total"), linewidth=2.5)
+        logk, logsolenoidal = log_spectrum_coordinates(result.k, result.solenoidal)
+        lines!(ax, logk, logsolenoidal; label=latex_legend_label("solenoidal"), linewidth=2)
+        logk, logcompressive = log_spectrum_coordinates(result.k, result.compressive)
+        lines!(ax, logk, logcompressive; label=latex_legend_label("compressive"), linewidth=2)
         axislegend(ax)
         save_figure!(files, fig, output_dir, "vector_spectrum_$(sanitize(name))", formats; overwrite)
     end
@@ -300,13 +311,15 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
             push!(files, fit_path)
         end
         fig = Figure(size=(760, 520))
-        ylabel = compensation == 0 ? "P(k)" : "k^$(compensation) P(k)"
+        ylabel = compensation == 0 ? latexstring("\\log_{10}P(k)") :
+            latexstring("\\log_{10}[k^{", compensation, "}P(k)]")
         box_unit = string(get(get(cfg, "grid", Dict()), "box_unit", "L"))
         ax = latex_axis(fig[1, 1], title="3-D isotropic spectrum - $(metadata[name].label)",
-            xlabel="k [1 / $(box_unit)]",
-            ylabel=ylabel, xscale=log10, yscale=log10)
-        lines!(ax, result.k, compensated; color=:darkorange, linewidth=2.5)
-        scatter!(ax, result.k, compensated; color=:darkorange, markersize=6)
+            xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
+            ylabel=ylabel)
+        logk, logpower = log_spectrum_coordinates(result.k, compensated)
+        lines!(ax, logk, logpower; color=:darkorange, linewidth=2.5)
+        scatter!(ax, logk, logpower; color=:darkorange, markersize=6)
         save_figure!(files, fig, output_dir, "spectrum_$(sanitize(name))", formats; overwrite)
     end
 end

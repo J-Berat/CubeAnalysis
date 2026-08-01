@@ -50,6 +50,10 @@ end
     k, power, modes = isotropic_spectrum(cube; bins=8)
     @test length(k) == length(power) == length(modes)
     @test all(power .>= 0)
+    logk_test, logpower_test = CubeAnalysis.log_spectrum_coordinates([0.1, 1.0, 10.0],
+        [100.0, 10.0, 1.0])
+    @test logk_test ≈ [-1.0, 0.0, 1.0]
+    @test logpower_test ≈ [2.0, 1.0, 0.0]
 
     @testset "analytic geometry and spectra" begin
         shape = (32, 24, 16)
