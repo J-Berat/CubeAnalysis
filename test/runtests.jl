@@ -15,6 +15,14 @@ end
     style_axis = CubeAnalysis.latex_axis(style_figure[1, 1]; title="must be hidden", xlabel="x")
     @test isempty(style_axis.title[])
     @test CubeAnalysis.latex_layout_label(style_figure[0, 1], "must be hidden") === nothing
+    equilibrium_temperature = 5000.0
+    equilibrium_density = CubeAnalysis.thermal_equilibrium_density(equilibrium_temperature)
+    cooling_over_heating = 1.0e7 * exp(-1.184e5 / (equilibrium_temperature + 1000.0)) +
+        1.4e-2 * sqrt(equilibrium_temperature) * exp(-92.0 / equilibrium_temperature)
+    @test equilibrium_density * cooling_over_heating ≈ 1.0
+    equilibrium_n, equilibrium_t = CubeAnalysis.thermal_equilibrium_curve(0.01, 1000.0)
+    @test length(equilibrium_n) == length(equilibrium_t) > 100
+    @test all(n -> 0.01 <= n <= 1000.0, equilibrium_n)
     cube = reshape(Float32.(1:512), 8, 8, 8)
     gx, gy, gz = periodic_gradient(cube, 8.0)
     @test size(gx) == size(cube)
@@ -187,6 +195,8 @@ end
             bins = 12
             log_x = true
             log_y = true
+            thermal_overlay = "temperature"
+            isotherms = [100.0, 1000.0, 8000.0]
 
             [[relations]]
             name = "B_n"

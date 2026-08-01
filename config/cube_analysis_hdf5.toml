@@ -118,6 +118,8 @@ y = "temperature"
 bins = 160
 log_x = true
 log_y = true
+thermal_overlay = "temperature"
+isotherms = [100.0, 1000.0, 8000.0]
 
 [[relations]]
 name = "magnetic_field_vs_density"

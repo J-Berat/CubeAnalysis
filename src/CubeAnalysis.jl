@@ -569,6 +569,61 @@ function selection_options(spec, fields)
         weights=isnothing(weight_name) ? nothing : fields[string(weight_name)])
 end
 
+"""Density in thermal equilibrium for the Koyama--Inutsuka cooling law."""
+function thermal_equilibrium_density(temperature::Real)
+    temperature > 0 || return NaN
+    cooling_over_heating = 1.0e7 * exp(-1.184e5 / (temperature + 1000.0)) +
+        1.4e-2 * sqrt(temperature) * exp(-92.0 / temperature)
+    return inv(cooling_over_heating)
+end
+
+function thermal_equilibrium_curve(nmin::Real, nmax::Real; samples=1200,
+        temperature_range=(5.0, 1.0e6))
+    samples >= 2 || error("Thermal-equilibrium curve needs at least two samples")
+    tmin, tmax = Float64.(temperature_range)
+    0 < tmin < tmax || error("thermal_temperature_range must contain two positive increasing values")
+    temperatures = 10 .^ range(log10(tmin), log10(tmax); length=samples)
+    densities = thermal_equilibrium_density.(temperatures)
+    keep = isfinite.(densities) .& (densities .>= nmin) .& (densities .<= nmax)
+    return densities[keep], temperatures[keep]
+end
+
+axis_values(values, logarithmic) = logarithmic ? log10.(values) : values
+
+function plot_thermal_phase_overlays!(ax, spec, xedges, yedges, logx, logy)
+    mode = lowercase(string(get(spec, "thermal_overlay", "none")))
+    mode in ("none", "temperature", "pressure") ||
+        error("thermal_overlay must be none, temperature, or pressure; got '$mode'")
+    mode == "none" && return false
+
+    physical_xmin = logx ? 10.0^first(xedges) : first(xedges)
+    physical_xmax = logx ? 10.0^last(xedges) : last(xedges)
+    temperature_range = Tuple(Float64.(get(spec, "thermal_temperature_range", [5.0, 1.0e6])))
+    densities, temperatures = thermal_equilibrium_curve(physical_xmin, physical_xmax;
+        samples=Int(get(spec, "thermal_samples", 1200)), temperature_range)
+    if !isempty(densities)
+        equilibrium_y = mode == "temperature" ? temperatures : densities .* temperatures
+        lines!(ax, axis_values(densities, logx), axis_values(equilibrium_y, logy);
+            color=:deepskyblue, linewidth=3.0,
+            label=latex_legend_label("thermal equilibrium"))
+    end
+
+    xphysical = 10 .^ range(log10(physical_xmin), log10(physical_xmax); length=300)
+    for temperature in Float64.(get(spec, "isotherms", [100.0, 1000.0, 8000.0]))
+        temperature > 0 || error("Isotherm temperatures must be positive")
+        isotherm_y = mode == "temperature" ? fill(temperature, length(xphysical)) :
+            xphysical .* temperature
+        transformed_y = axis_values(isotherm_y, logy)
+        maximum(transformed_y) < first(yedges) && continue
+        minimum(transformed_y) > last(yedges) && continue
+        lines!(ax, axis_values(xphysical, logx), transformed_y;
+            color=:black, linestyle=:dash, linewidth=1.5,
+            label=latex_legend_label("T = $(@sprintf("%.4g", temperature)) K"))
+    end
+    axislegend(ax; position=:rb)
+    return true
+end
+
 function plot_phase_diagrams!(files, fields, metadata, cfg, output_dir, formats, overwrite, stride)
     for spec in get(cfg, "phase_diagrams", Any[])
         name, xname, yname = string(spec["name"]), string(spec["x"]), string(spec["y"])
@@ -583,8 +638,11 @@ function plot_phase_diagrams!(files, fields, metadata, cfg, output_dir, formats,
         ax = latex_axis(fig[1, 1], title=replace(name, '_' => ' '),
             xlabel=(logx ? "log10 " : "") * field_label(xname, metadata[xname]),
             ylabel=(logy ? "log10 " : "") * field_label(yname, metadata[yname]))
-        hm = heatmap!(ax, xe, ye, log10.(counts .+ 1); colormap=:magma)
-        latex_colorbar(fig[1, 2], hm, label="log10(N + 1)")
+        displayed_counts = map(count -> count > 0 ? log10(count) : NaN, counts)
+        hm = heatmap!(ax, xe, ye, displayed_counts; colormap=:magma, nan_color=:white)
+        plot_thermal_phase_overlays!(ax, spec, xe, ye, logx, logy)
+        xlims!(ax, first(xe), last(xe)); ylims!(ax, first(ye), last(ye))
+        latex_colorbar(fig[1, 2], hm, label="log10 N")
         save_figure!(files, fig, output_dir, "phase_$(sanitize(name))", formats; overwrite)
     end
 end
