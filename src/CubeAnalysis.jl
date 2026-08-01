@@ -410,6 +410,20 @@ function histogram_counts(values, bins::Int)
     return centers, counts, edges[2] - edges[1]
 end
 
+function histogram_counts(values, edges::AbstractVector)
+    bins = length(edges) - 1
+    bins > 1 || error("Histogram edges must define at least two bins")
+    counts = zeros(Float64, bins)
+    lo, hi = first(edges), last(edges)
+    scale = bins / (hi - lo)
+    @inbounds for value in values
+        bin = clamp(floor(Int, (value - lo) * scale) + 1, 1, bins)
+        counts[bin] += 1
+    end
+    centers = 0.5 .* (edges[1:end-1] .+ edges[2:end])
+    return centers, counts, edges[2] - edges[1]
+end
+
 function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, overwrite, stride)
     settings = get(cfg, "histograms", Dict())
     bins = Int(get(settings, "bins", 80))
@@ -428,6 +442,39 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
             title="Distribution of $(meta.label)")
         barplot!(ax, centers, counts; width=width, color=:steelblue)
         save_figure!(files, fig, output_dir, "histogram_$(sanitize(name))", formats; overwrite)
+    end
+
+    for group in get(settings, "groups", Any[])
+        group_name = string(group["name"])
+        names = string.(group["fields"])
+        length(names) >= 2 || error("Histogram group '$group_name' needs at least two fields")
+        missing = filter(name -> !haskey(fields, name), names)
+        isempty(missing) || error("Histogram group '$group_name' references missing fields: $missing")
+        logscales = unique(metadata[name].logscale for name in names)
+        length(logscales) == 1 || error("Histogram group '$group_name' mixes linear and logarithmic fields")
+        logscale = only(logscales)
+        samples = [sampled_field(fields, name; stride, positive=logscale) for name in names]
+        any(isempty, samples) && error("Histogram group '$group_name' has a field without valid samples")
+        values = logscale ? [log10.(sample) for sample in samples] : samples
+        low = minimum(minimum, values); high = maximum(maximum, values)
+        low == high && (high = nextfloat(low))
+        edges = collect(range(low, high; length=bins + 1))
+        units = unique(metadata[name].unit for name in names)
+        unit = length(units) == 1 ? only(units) : ""
+        xlabel = string(get(group, "xlabel", isempty(unit) ? "field value" : "field value [$unit]"))
+        fig = Figure(size=(760, 520))
+        ax = latex_axis(fig[1, 1],
+            xlabel=(logscale ? "log10 " : "") * xlabel,
+            ylabel=normalize ? "probability density" : "cells",
+            title=string(get(group, "title", replace(group_name, '_' => ' '))))
+        for (index, name) in enumerate(names)
+            centers, counts, width = histogram_counts(values[index], edges)
+            normalize && (counts ./= sum(counts) * width)
+            lines!(ax, centers, counts; linewidth=2.5,
+                label=latex_legend_label(metadata[name].label))
+        end
+        axislegend(ax)
+        save_figure!(files, fig, output_dir, "histogram_$(sanitize(group_name))", formats; overwrite)
     end
 end
 

@@ -57,6 +57,18 @@ bins = 80
 normalize = true
 # Optional: fields = ["density", "temperature", "Bmag", "Vmag"]
 
+[[histograms.groups]]
+name = "magnetic_components"
+title = "Magnetic-field components"
+fields = ["Bx", "By", "Bz"]
+xlabel = "B"
+
+[[histograms.groups]]
+name = "velocity_components"
+title = "Velocity components"
+fields = ["Vx", "Vy", "Vz"]
+xlabel = "v"
+
 [spectra]
 bins = 80
 remove_mean = true

@@ -137,6 +137,10 @@ end
             [histograms]
             bins = 12
 
+            [[histograms.groups]]
+            name = "magnetic_components"
+            fields = ["Bx", "By", "Bz"]
+
             [spectra]
             bins = 8
             fields = ["density", "Bmag"]
@@ -194,6 +198,7 @@ end
         @test result.output_dir == output_dir
         @test isfile(joinpath(output_dir, "cube_summary.csv"))
         @test isfile(joinpath(output_dir, "phase_n_t.png"))
+        @test isfile(joinpath(output_dir, "histogram_magnetic_components.png"))
         @test isfile(joinpath(output_dir, "spectrum_density.csv"))
         @test isfile(joinpath(output_dir, "alignment_grad_n_b.csv"))
         @test isfile(joinpath(output_dir, "analysis_manifest.toml"))
