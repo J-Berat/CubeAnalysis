@@ -175,8 +175,9 @@ function set_xi_log_ticks!(axis, xlimits)
     first_exponent = ceil(Int, log10(first(xlimits)))
     last_exponent = floor(Int, log10(last(xlimits)))
     exponents = collect(first_exponent:last_exponent)
-    axis.xticks = (10.0 .^ exponents,
-        [latexstring("10^{", exponent, "}") for exponent in exponents])
+    axis.xtickformat = values -> [latexstring("10^{", round(Int, log10(value)), "}")
+        for value in values]
+    axis.xticks = 10.0 .^ exponents
 end
 
 function plot_xi_curve!(axis, curve::HROXiCurve, xlimits)

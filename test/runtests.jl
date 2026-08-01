@@ -46,6 +46,16 @@ end
     @test aligned_result.gradient_global.xi ≈ 1.0
     @test aligned_result.velocity_global.xi ≈ 1.0
     @test aligned_result.sigma_v > 0
+    xi_rendered = mktempdir() do directory
+        figure = CubeAnalysis.Figure(size=(500, 350))
+        axis = CubeAnalysis.latex_axis(figure[1, 1]; xscale=log10)
+        CubeAnalysis.plot_xi_curve!(axis, aligned_result.gradient, (0.5, 10.0))
+        files = String[]
+        CubeAnalysis.save_figure!(files, figure, directory, "xi_tick_regression", ["png"];
+            overwrite=true)
+        length(files) == 1 && isfile(only(files))
+    end
+    @test xi_rendered
     cube = reshape(Float32.(1:512), 8, 8, 8)
     gx, gy, gz = periodic_gradient(cube, 8.0)
     @test size(gx) == size(cube)
