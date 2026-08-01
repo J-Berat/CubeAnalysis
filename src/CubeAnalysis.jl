@@ -596,7 +596,7 @@ end
 axis_values(values, logarithmic) = logarithmic ? log10.(values) : values
 
 function phase_isotherm_colors(spec, count::Integer)
-    configured = string.(get(spec, "isotherm_colors", ["red", "orange", "yellow"]))
+    configured = string.(get(spec, "isotherm_colors", ["yellow", "orange", "red"]))
     isempty(configured) && error("isotherm_colors must contain at least one color")
     return [Symbol(configured[mod1(index, length(configured))]) for index in 1:count]
 end
