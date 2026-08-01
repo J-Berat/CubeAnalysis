@@ -50,6 +50,7 @@ positions = [0.25, 0.50, 0.75]
 [projections]
 axes = ["x", "y", "z"]
 statistics = ["mean", "sum", "max"]
+column_density_fields = ["density"]
 # Optional: fields = ["density", "temperature", "Bmag", "Vmag"]
 
 [histograms]

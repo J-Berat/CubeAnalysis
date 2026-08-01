@@ -326,6 +326,36 @@ function projection_map(cube, axis::AbstractString, statistic::AbstractString)
     return Array(dropdims(projected; dims=dimension))
 end
 
+function length_unit_to_cm(unit::AbstractString)
+    normalized = lowercase(strip(unit))
+    factors = Dict(
+        "cm" => 1.0,
+        "m" => 1.0e2,
+        "au" => 1.495978707e13,
+        "pc" => 3.0856775814913673e18,
+        "kpc" => 3.0856775814913673e21,
+    )
+    haskey(factors, normalized) ||
+        error("Cannot convert grid.box_unit '$unit' to centimeters for column density")
+    return factors[normalized]
+end
+
+function column_density_map(cube, axis::AbstractString, cfg)
+    dimension = axis_dimension(axis)
+    grid = get(cfg, "grid", Dict())
+    spacings = grid_spacings(cube, get(grid, "box_size", 1.0);
+        axis_order=string.(get(grid, "axis_order", ["x", "y", "z"])))
+    cell_length_cm = spacings[dimension] *
+        length_unit_to_cm(string(get(grid, "box_unit", "cm")))
+    return projection_map(cube, axis, "sum") .* cell_length_cm
+end
+
+function column_density_unit(unit::AbstractString)
+    isempty(unit) && return "cm"
+    occursin("cm^-3", unit) && return replace(unit, "cm^-3" => "cm^-2")
+    return "$unit cm"
+end
+
 function write_summary!(files, fields, metadata, output_dir, stride; overwrite=true)
     path = joinpath(output_dir, "cube_summary.csv")
     write_text_output(path; overwrite) do io
@@ -375,21 +405,30 @@ function plot_projections!(files, fields, metadata, cfg, output_dir, formats, ov
     settings = get(cfg, "projections", Dict())
     axes = string.(get(settings, "axes", ["x", "y", "z"]))
     statistics = string.(get(settings, "statistics", ["mean"]))
+    column_density_fields = Set(string.(get(settings, "column_density_fields", ["density"])))
     render = get(cfg, "render", Dict())
     for name in selected_fields(settings, fields)
         cube, meta = fields[name], metadata[name]
+        is_column_density = name in column_density_fields
+        field_statistics = is_column_density ? ["column density"] : statistics
         fig = Figure(size=(Int(get(render, "width", 1200)),
-            max(360, 330 * length(statistics))), fontsize=Int(get(render, "fontsize", 16)))
-        for (row, statistic) in enumerate(statistics), (column, axis) in enumerate(axes)
-            shown = transformed_map(projection_map(cube, axis, statistic), meta.logscale)
+            max(360, 330 * length(field_statistics))), fontsize=Int(get(render, "fontsize", 16)))
+        for (row, statistic) in enumerate(field_statistics), (column, axis) in enumerate(axes)
+            map = is_column_density ? column_density_map(cube, axis, cfg) :
+                projection_map(cube, axis, statistic)
+            shown = transformed_map(map, meta.logscale)
             ax = latex_axis(fig[row, column], title="$(statistic), LOS $(axis)",
                 xlabel="pixel", ylabel="pixel", aspect=DataAspect())
             lo, hi = robust_range(shown, render)
             hm = heatmap!(ax, shown; colormap=meta.colormap, colorrange=(lo, hi))
+            colorbar_label = is_column_density ?
+                "column density [$(column_density_unit(meta.unit))]" : field_label(name, meta)
             column == length(axes) && latex_colorbar(fig[row, column + 1], hm,
-                label=(meta.logscale ? "log10 " : "") * field_label(name, meta))
+                label=(meta.logscale ? "log10 " : "") * colorbar_label)
         end
-        latex_layout_label(fig[0, 1:length(axes)], "Projections - $(field_label(name, meta))";
+        figure_label = is_column_density ?
+            "Column density [$(column_density_unit(meta.unit))]" : field_label(name, meta)
+        latex_layout_label(fig[0, 1:length(axes)], "Projections - $figure_label";
             fontsize=22, tellwidth=false)
         save_figure!(files, fig, output_dir, "projections_$(sanitize(name))", formats; overwrite)
     end

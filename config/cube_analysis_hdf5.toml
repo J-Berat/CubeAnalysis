@@ -33,6 +33,7 @@ fields = ["density", "temperature", "Bmag", "Vmag"]
 [projections]
 axes = ["x", "y", "z"]
 statistics = ["mean", "sum", "max"]
+column_density_fields = ["density"]
 fields = ["density", "temperature", "Bmag", "Vmag"]
 
 [histograms]

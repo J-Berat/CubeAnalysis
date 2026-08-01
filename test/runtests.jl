@@ -69,6 +69,15 @@ end
         @test all(row -> row.longitudinal[1] > 0, x_rows)
         @test all(row -> row.transverse[1] == 0, x_rows)
 
+        uniform_density = fill(2.0f0, 4, 5, 10)
+        column_cfg = Dict("grid" => Dict("box_size" => [8.0, 10.0, 50.0],
+            "axis_order" => ["x", "y", "z"], "box_unit" => "pc"))
+        expected_column = 2.0 * 50.0 * CubeAnalysis.length_unit_to_cm("pc")
+        @test all(CubeAnalysis.column_density_map(uniform_density, "z", column_cfg) .≈
+            expected_column)
+        @test size(CubeAnalysis.column_density_map(uniform_density, "x", column_cfg)) == (5, 10)
+        @test CubeAnalysis.column_density_unit("cm^-3") == "cm^-2"
+
         excursion = zeros(Float32, 4, 4, 4)
         excursion[1, 1, 1] = 1; excursion[4, 4, 4] = 1
         topology = CubeAnalysis.excursion_metrics(excursion, 0.5; periodic=false)

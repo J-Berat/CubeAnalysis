@@ -73,6 +73,7 @@ function configure(base, input_dir, output_dir)
     cfg["projections"]["fields"] = selected
     cfg["projections"]["axes"] = ["x", "y", "z"]
     cfg["projections"]["statistics"] = ["mean"]
+    cfg["projections"]["column_density_fields"] = ["density"]
     cfg["histograms"]["fields"] = selected
 
     lengths = Float64.(box_size)
