@@ -21,6 +21,16 @@ end
     @test occursin("v_x", string(CubeAnalysis.latex_text("v_x")))
     @test !occursin(raw"v\_x", string(CubeAnalysis.latex_text("v_x")))
     @test occursin(raw"\log_{10}", string(CubeAnalysis.latex_text("log10 v_x")))
+    log_figure = CubeAnalysis.Figure()
+    native_log_axis = CubeAnalysis.latex_axis(log_figure[1, 1]; xscale=log10, yscale=log10)
+    @test native_log_axis.xminorticksvisible[]
+    @test native_log_axis.yminorticksvisible[]
+    explicit_log_axis = CubeAnalysis.latex_axis(log_figure[1, 2];
+        xlogcoordinates=true, ylogcoordinates=true)
+    @test explicit_log_axis.xminorticksvisible[]
+    @test explicit_log_axis.yminorticksvisible[]
+    @test !explicit_log_axis.xminorgridvisible[]
+    @test !explicit_log_axis.yminorgridvisible[]
     @test CubeAnalysis.latex_layout_label(style_figure[0, 1], "must be hidden") === nothing
     equilibrium_temperature = 5000.0
     equilibrium_density = CubeAnalysis.thermal_equilibrium_density(equilibrium_temperature)

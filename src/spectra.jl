@@ -248,7 +248,8 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
             latexstring("\\log_{10}E_{\\omega}(k)") : latexstring("\\log_{10}E(k)")
         fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1],
             xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
-            ylabel=spectrum_label, title=replace(name, '_' => ' '))
+            ylabel=spectrum_label, xlogcoordinates=true, ylogcoordinates=true,
+            title=replace(name, '_' => ' '))
         logk, logtotal = log_spectrum_coordinates(result.k, result.total)
         lines!(ax, logk, logtotal; label=latex_legend_label("total"), linewidth=2.5)
         if transform == "none"
@@ -390,7 +391,7 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
         box_unit = string(get(get(cfg, "grid", Dict()), "box_unit", "L"))
         ax = latex_axis(fig[1, 1], title="3-D isotropic spectrum - $(metadata[name].label)",
             xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
-            ylabel=ylabel)
+            ylabel=ylabel, xlogcoordinates=true, ylogcoordinates=true)
         logk, logpower = log_spectrum_coordinates(result.k, compensated)
         lines!(ax, logk, logpower; color=:darkorange, linewidth=2.5)
         scatter!(ax, logk, logpower; color=:darkorange, markersize=6)

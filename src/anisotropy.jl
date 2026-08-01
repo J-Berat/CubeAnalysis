@@ -110,7 +110,7 @@ function plot_anisotropic_spectra!(files, fields, metadata, cfg, output_dir, for
         finite = filter(isfinite, shown); range = isempty(finite) ? (0.0, 1.0) : extrema(finite)
         hm = heatmap!(ax, result.parallel_centers, result.perpendicular_centers, shown;
             colormap=:magma, colorrange=range)
-        latex_colorbar(fig[1, 2], hm, label="log10 mean power")
+        latex_colorbar(fig[1, 2], hm, label="log10 mean power", logcoordinates=true)
         save_figure!(files, fig, output_dir, "anisotropic_spectrum_$(sanitize(name))", formats; overwrite)
     end
 end

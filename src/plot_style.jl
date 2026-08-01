@@ -56,6 +56,8 @@ latex_tickformat(values) = latex_number.(values)
 function latex_axis(parent; kwargs...)
     options = Dict{Symbol,Any}(kwargs)
     pop!(options, :title, nothing)
+    xlogcoordinates = Bool(pop!(options, :xlogcoordinates, false))
+    ylogcoordinates = Bool(pop!(options, :ylogcoordinates, false))
     for key in (:xlabel, :ylabel)
         haskey(options, key) && (options[key] = latex_text(options[key]))
     end
@@ -63,6 +65,14 @@ function latex_axis(parent; kwargs...)
     options[:ygridvisible] = false
     options[:xminorgridvisible] = false
     options[:yminorgridvisible] = false
+    if xlogcoordinates || get(options, :xscale, identity) === log10
+        options[:xminorticksvisible] = true
+        get!(options, :xminorticks, IntervalsBetween(xlogcoordinates ? 10 : 9))
+    end
+    if ylogcoordinates || get(options, :yscale, identity) === log10
+        options[:yminorticksvisible] = true
+        get!(options, :yminorticks, IntervalsBetween(ylogcoordinates ? 10 : 9))
+    end
     get!(options, :xtickformat, latex_tickformat)
     get!(options, :ytickformat, latex_tickformat)
     return Axis(parent; options...)
@@ -70,7 +80,12 @@ end
 
 function latex_colorbar(parent, plot; kwargs...)
     options = Dict{Symbol,Any}(kwargs)
+    logcoordinates = Bool(pop!(options, :logcoordinates, false))
     haskey(options, :label) && (options[:label] = latex_text(options[:label]))
+    if logcoordinates
+        options[:minorticksvisible] = true
+        get!(options, :minorticks, IntervalsBetween(10))
+    end
     get!(options, :tickformat, latex_tickformat)
     return Colorbar(parent, plot; options...)
 end

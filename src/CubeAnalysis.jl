@@ -393,7 +393,8 @@ function plot_slices!(files, fields, metadata, cfg, output_dir, formats, overwri
             lo, hi = robust_range(shown, render)
             hm = heatmap!(ax, shown; colormap=meta.colormap, colorrange=(lo, hi))
             column == length(axes) && latex_colorbar(fig[row, column + 1], hm,
-                label=(meta.logscale ? "log10 " : "") * field_label(name, meta))
+                label=(meta.logscale ? "log10 " : "") * field_label(name, meta),
+                logcoordinates=meta.logscale)
         end
         latex_layout_label(fig[0, 1:length(axes)], "Slices - $(field_label(name, meta))";
             fontsize=22, tellwidth=false)
@@ -425,7 +426,8 @@ function plot_projections!(files, fields, metadata, cfg, output_dir, formats, ov
             colorbar_label = is_column_density ?
                 "column density [$(column_density_unit(meta.unit))]" : field_label(name, meta)
             column == length(axes) && latex_colorbar(fig[row, column + 1], hm,
-                label=(meta.logscale ? "log10 " : "") * colorbar_label)
+                label=(meta.logscale ? "log10 " : "") * colorbar_label,
+                logcoordinates=meta.logscale)
         end
         figure_label = is_column_density ?
             "Column density [$(column_density_unit(meta.unit))]" : field_label(name, meta)
@@ -479,6 +481,7 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
         ax = latex_axis(fig[1, 1],
             xlabel=(meta.logscale ? "log10 " : "") * field_label(name, meta),
             ylabel=normalize ? "probability density" : "cells",
+            xlogcoordinates=meta.logscale,
             title="Distribution of $(meta.label)")
         barplot!(ax, centers, counts; width=width, color=:steelblue)
         save_figure!(files, fig, output_dir, "histogram_$(sanitize(name))", formats; overwrite)
@@ -506,6 +509,7 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
         ax = latex_axis(fig[1, 1],
             xlabel=(logscale ? "log10 " : "") * xlabel,
             ylabel=normalize ? "probability density" : "cells",
+            xlogcoordinates=logscale,
             title=string(get(group, "title", replace(group_name, '_' => ' '))))
         for (index, name) in enumerate(names)
             centers, counts, width = histogram_counts(values[index], edges)
@@ -646,12 +650,13 @@ function plot_phase_diagrams!(files, fields, metadata, cfg, output_dir, formats,
         fig = Figure(size=(820, 620))
         ax = latex_axis(fig[1, 1], title=replace(name, '_' => ' '),
             xlabel=(logx ? "log10 " : "") * field_label(xname, metadata[xname]),
-            ylabel=(logy ? "log10 " : "") * field_label(yname, metadata[yname]))
+            ylabel=(logy ? "log10 " : "") * field_label(yname, metadata[yname]),
+            xlogcoordinates=logx, ylogcoordinates=logy)
         displayed_counts = map(count -> count > 0 ? log10(count) : NaN, counts)
         hm = heatmap!(ax, xe, ye, displayed_counts; colormap=:magma, nan_color=:white)
         plot_thermal_phase_overlays!(ax, spec, xe, ye, logx, logy)
         xlims!(ax, first(xe), last(xe)); ylims!(ax, first(ye), last(ye))
-        latex_colorbar(fig[1, 2], hm, label="log10 N")
+        latex_colorbar(fig[1, 2], hm, label="log10 N", logcoordinates=true)
         save_figure!(files, fig, output_dir, "phase_$(sanitize(name))", formats; overwrite)
     end
 end
