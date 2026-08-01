@@ -50,7 +50,8 @@ latex_tickformat(values) = latex_number.(values)
 
 function latex_axis(parent; kwargs...)
     options = Dict{Symbol,Any}(kwargs)
-    for key in (:xlabel, :ylabel, :title)
+    pop!(options, :title, nothing)
+    for key in (:xlabel, :ylabel)
         haskey(options, key) && (options[key] = latex_text(options[key]))
     end
     get!(options, :xtickformat, latex_tickformat)
@@ -65,5 +66,5 @@ function latex_colorbar(parent, plot; kwargs...)
     return Colorbar(parent, plot; options...)
 end
 
-latex_layout_label(parent, text; kwargs...) = Label(parent, latex_text(text); kwargs...)
+latex_layout_label(parent, text; kwargs...) = nothing
 latex_legend_label(text) = latex_text(text)

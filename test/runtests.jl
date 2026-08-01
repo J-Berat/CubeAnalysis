@@ -11,6 +11,10 @@ end
 
 @testset "CubeAnalysis" begin
     @test !CubeAnalysis.save_data(Dict("run" => Dict()))
+    style_figure = CubeAnalysis.Figure()
+    style_axis = CubeAnalysis.latex_axis(style_figure[1, 1]; title="must be hidden", xlabel="x")
+    @test isempty(style_axis.title[])
+    @test CubeAnalysis.latex_layout_label(style_figure[0, 1], "must be hidden") === nothing
     cube = reshape(Float32.(1:512), 8, 8, 8)
     gx, gy, gz = periodic_gradient(cube, 8.0)
     @test size(gx) == size(cube)
