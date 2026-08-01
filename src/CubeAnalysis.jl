@@ -21,6 +21,7 @@ include("diagnostics.jl")
 include("topology.jl")
 include("anisotropy.jl")
 include("directional_structure.jl")
+include("ibanez_alignment.jl")
 
 export run_analysis, load_config, load_fields, read_cube, periodic_gradient, isotropic_spectrum
 
@@ -846,6 +847,7 @@ function plot_alignments!(files, fields, metadata, cfg, output_dir, formats, ove
         ylims!(ax2, -1.05, 1.05)
         latex_layout_label(fig[0, :], replace(name, '_' => ' '); fontsize=22, tellwidth=false)
         save_figure!(files, fig, output_dir, "alignment_$(sanitize(name))", formats; overwrite)
+        plot_ibanez_xi!(files, fields, metadata, cfg, spec, output_dir, formats, overwrite)
     end
 end
 

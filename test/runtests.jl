@@ -23,6 +23,25 @@ end
     equilibrium_n, equilibrium_t = CubeAnalysis.thermal_equilibrium_curve(0.01, 1000.0)
     @test length(equilibrium_n) == length(equilibrium_t) > 100
     @test all(n -> 0.01 <= n <= 1000.0, equilibrium_n)
+    uniform_weights = ones(Float32, 4, 4, 4)
+    vx_test = [Float32(i) for i in 1:4, _ in 1:4, _ in 1:4]
+    zeros_test = zeros(Float32, 4, 4, 4)
+    sigma_test, velocity_mean_test = CubeAnalysis.velocity_dispersion_1d(
+        uniform_weights, vx_test, zeros_test, zeros_test)
+    @test velocity_mean_test[1] ≈ 2.5
+    @test sigma_test ≈ sqrt(1.25 / 3)
+    aligned_density = [Float32(i) for i in 1:8, _ in 1:8, _ in 1:8]
+    aligned_x = copy(aligned_density)
+    aligned_zero = zeros(Float32, size(aligned_density))
+    aligned_one = ones(Float32, size(aligned_density))
+    aligned_result = CubeAnalysis.ibanez_xi_analysis(aligned_density,
+        aligned_one, aligned_zero, aligned_zero,
+        aligned_x, aligned_zero, aligned_zero;
+        bins=4, density_range=(0.5, 10.0), minimum=1,
+        blocks_per_axis=2, periodic=false)
+    @test aligned_result.gradient_global.xi ≈ 1.0
+    @test aligned_result.velocity_global.xi ≈ 1.0
+    @test aligned_result.sigma_v > 0
     cube = reshape(Float32.(1:512), 8, 8, 8)
     gx, gy, gz = periodic_gradient(cube, 8.0)
     @test size(gx) == size(cube)

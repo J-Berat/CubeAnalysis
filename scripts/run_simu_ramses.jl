@@ -228,6 +228,9 @@ function main(args)
         GC.gc(true)
     end
     complete = count(row -> row.status in ("complete", "skipped_complete"), rows)
+    xi_files = String[]
+    CubeAnalysis.plot_xi_vs_sigma_v!(xi_files, simulations, output_root, ["png"];
+        overwrite=false, box_size=(50.0, 50.0, 50.0), axis_order=("x", "y", "z"))
     ensemble = save_outputs ? write_ensemble_tables(output_root, simulations) : String[]
     @info "Batch finished" complete total=length(rows) report=(save_outputs ? report_path : "disabled") available_gib=available_gib(output_root)
     save_outputs && @info "Ensemble comparison tables" files=ensemble
