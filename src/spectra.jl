@@ -174,11 +174,11 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
             end
         end
         push!(files, path)
-        fig = Figure(size=(760, 520)); ax = Axis(fig[1, 1], xscale=log10, yscale=log10,
+        fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1], xscale=log10, yscale=log10,
             xlabel="k [physical]", ylabel="shell energy", title=replace(name, '_' => ' '))
-        lines!(ax, result.k, result.total; label="total", linewidth=2.5)
-        lines!(ax, result.k, result.solenoidal; label="solenoidal", linewidth=2)
-        lines!(ax, result.k, result.compressive; label="compressive", linewidth=2)
+        lines!(ax, result.k, result.total; label=latex_legend_label("total"), linewidth=2.5)
+        lines!(ax, result.k, result.solenoidal; label=latex_legend_label("solenoidal"), linewidth=2)
+        lines!(ax, result.k, result.compressive; label=latex_legend_label("compressive"), linewidth=2)
         axislegend(ax)
         save_figure!(files, fig, output_dir, "vector_spectrum_$(sanitize(name))", formats; overwrite)
     end
@@ -241,7 +241,7 @@ function plot_cross_spectra!(files, fields, cfg, output_dir, formats, overwrite)
             end
         end
         push!(files, path)
-        fig = Figure(size=(760, 520)); ax = Axis(fig[1, 1], xscale=log10,
+        fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1], xscale=log10,
             xlabel="k [physical]", ylabel="coherence", title=replace(name, '_' => ' '))
         lines!(ax, result.k, result.coherence; linewidth=2.5); ylims!(ax, 0, 1.05)
         save_figure!(files, fig, output_dir, "cross_spectrum_$(sanitize(name))", formats; overwrite)
@@ -296,7 +296,7 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
         fig = Figure(size=(760, 520))
         ylabel = compensation == 0 ? "P(k)" : "k^$(compensation) P(k)"
         box_unit = string(get(get(cfg, "grid", Dict()), "box_unit", "L"))
-        ax = Axis(fig[1, 1], title="3-D isotropic spectrum - $(metadata[name].label)",
+        ax = latex_axis(fig[1, 1], title="3-D isotropic spectrum - $(metadata[name].label)",
             xlabel="k [1 / $(box_unit)]",
             ylabel=ylabel, xscale=log10, yscale=log10)
         lines!(ax, result.k, compensated; color=:darkorange, linewidth=2.5)

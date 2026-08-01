@@ -110,21 +110,20 @@ function plot_directional_structure!(files, fields, metadata, cfg, output_dir, f
         push!(files, fit_path)
         second_index = findfirst(==(2), orders)
         if !isnothing(second_index)
-            fig = Figure(size=(900, 550)); ax = Axis(fig[1, 1], xscale=log10, yscale=log10,
+            fig = Figure(size=(900, 550)); ax = latex_axis(fig[1, 1], xscale=log10, yscale=log10,
                 xlabel="separation", ylabel="second-order increment", title=replace(name, '_' => ' '))
             colors = [:steelblue, :darkorange, :purple]
             for (axis_index, axis) in enumerate(axis_order)
                 selected = filter(row -> row.axis == axis, rows)
                 lines!(ax, getfield.(selected, :separation),
                     [row.longitudinal[second_index] for row in selected];
-                    color=colors[axis_index], linewidth=2.5, label="L, $axis")
+                    color=colors[axis_index], linewidth=2.5, label=latex_legend_label("L, $axis"))
                 lines!(ax, getfield.(selected, :separation),
                     [row.transverse[second_index] for row in selected];
-                    color=colors[axis_index], linestyle=:dash, linewidth=2, label="T, $axis")
+                    color=colors[axis_index], linestyle=:dash, linewidth=2, label=latex_legend_label("T, $axis"))
             end
             axislegend(ax)
             save_figure!(files, fig, output_dir, "directional_structure_$(sanitize(name))", formats; overwrite)
         end
     end
 end
-

@@ -101,14 +101,13 @@ function plot_anisotropic_spectra!(files, fields, metadata, cfg, output_dir, for
             end
         end
         push!(files, wedge_path)
-        fig = Figure(size=(850, 650)); ax = Axis(fig[1, 1], xlabel="k∥", ylabel="k⊥",
+        fig = Figure(size=(850, 650)); ax = latex_axis(fig[1, 1], xlabel="k∥", ylabel="k⊥",
             title="$(replace(name, '_' => ' ')); b̂=$(round.(result.direction; digits=3))")
         shown = log10.(result.power)
         finite = filter(isfinite, shown); range = isempty(finite) ? (0.0, 1.0) : extrema(finite)
         hm = heatmap!(ax, result.parallel_centers, result.perpendicular_centers, shown;
             colormap=:magma, colorrange=range)
-        Colorbar(fig[1, 2], hm, label="log10 mean power")
+        latex_colorbar(fig[1, 2], hm, label="log10 mean power")
         save_figure!(files, fig, output_dir, "anisotropic_spectrum_$(sanitize(name))", formats; overwrite)
     end
 end
-

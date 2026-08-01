@@ -110,12 +110,12 @@ function plot_topology!(files, fields, metadata, cfg, output_dir, formats, overw
         end
         push!(files, path)
         fig = Figure(size=(1050, 480))
-        ax1 = Axis(fig[1, 1], xlabel=field_label(field_name, metadata[field_name]),
+        ax1 = latex_axis(fig[1, 1], xlabel=field_label(field_name, metadata[field_name]),
             ylabel="fraction", title="Excursion-set morphology")
-        lines!(ax1, thresholds, getfield.(results, :volume_fraction); label="volume", linewidth=2.5)
-        lines!(ax1, thresholds, getfield.(results, :largest_fraction); label="largest component", linewidth=2.5)
+        lines!(ax1, thresholds, getfield.(results, :volume_fraction); label=latex_legend_label("volume"), linewidth=2.5)
+        lines!(ax1, thresholds, getfield.(results, :largest_fraction); label=latex_legend_label("largest component"), linewidth=2.5)
         axislegend(ax1)
-        ax2 = Axis(fig[1, 2], xlabel=field_label(field_name, metadata[field_name]),
+        ax2 = latex_axis(fig[1, 2], xlabel=field_label(field_name, metadata[field_name]),
             ylabel="connected components")
         lines!(ax2, thresholds, getfield.(results, :components); linewidth=2.5, color=:darkorange)
         save_figure!(files, fig, output_dir, "topology_$(sanitize(name))", formats; overwrite)

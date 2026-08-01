@@ -4,12 +4,14 @@ using CairoMakie
 using FFTW
 using FITSIO
 using HDF5
+using LaTeXStrings
 using LinearAlgebra
 using Printf
 using Random
 using Statistics
 using TOML
 
+include("plot_style.jl")
 include("geometry.jl")
 include("lazy_fields.jl")
 include("streaming.jl")
@@ -353,14 +355,14 @@ function plot_slices!(files, fields, metadata, cfg, output_dir, formats, overwri
         for (row, position) in enumerate(positions), (column, axis) in enumerate(axes)
             map, index = slice_map(cube, axis, position)
             shown = transformed_map(map, meta.logscale)
-            ax = Axis(fig[row, column], title="$(axis) = $index",
+            ax = latex_axis(fig[row, column], title="$(axis) = $index",
                 xlabel="pixel", ylabel="pixel", aspect=DataAspect())
             lo, hi = robust_range(shown, render)
             hm = heatmap!(ax, shown; colormap=meta.colormap, colorrange=(lo, hi))
-            column == length(axes) && Colorbar(fig[row, column + 1], hm,
+            column == length(axes) && latex_colorbar(fig[row, column + 1], hm,
                 label=(meta.logscale ? "log10 " : "") * field_label(name, meta))
         end
-        Label(fig[0, 1:length(axes)], "Slices - $(field_label(name, meta))";
+        latex_layout_label(fig[0, 1:length(axes)], "Slices - $(field_label(name, meta))";
             fontsize=22, tellwidth=false)
         save_figure!(files, fig, output_dir, "slices_$(sanitize(name))", formats; overwrite)
     end
@@ -378,14 +380,14 @@ function plot_projections!(files, fields, metadata, cfg, output_dir, formats, ov
             max(360, 330 * length(statistics))), fontsize=Int(get(render, "fontsize", 16)))
         for (row, statistic) in enumerate(statistics), (column, axis) in enumerate(axes)
             shown = transformed_map(projection_map(cube, axis, statistic), meta.logscale)
-            ax = Axis(fig[row, column], title="$(statistic), LOS $(axis)",
+            ax = latex_axis(fig[row, column], title="$(statistic), LOS $(axis)",
                 xlabel="pixel", ylabel="pixel", aspect=DataAspect())
             lo, hi = robust_range(shown, render)
             hm = heatmap!(ax, shown; colormap=meta.colormap, colorrange=(lo, hi))
-            column == length(axes) && Colorbar(fig[row, column + 1], hm,
+            column == length(axes) && latex_colorbar(fig[row, column + 1], hm,
                 label=(meta.logscale ? "log10 " : "") * field_label(name, meta))
         end
-        Label(fig[0, 1:length(axes)], "Projections - $(field_label(name, meta))";
+        latex_layout_label(fig[0, 1:length(axes)], "Projections - $(field_label(name, meta))";
             fontsize=22, tellwidth=false)
         save_figure!(files, fig, output_dir, "projections_$(sanitize(name))", formats; overwrite)
     end
@@ -418,7 +420,7 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
         centers, counts, width = histogram_counts(values, bins)
         normalize && (counts ./= sum(counts) * width)
         fig = Figure(size=(760, 520))
-        ax = Axis(fig[1, 1],
+        ax = latex_axis(fig[1, 1],
             xlabel=(meta.logscale ? "log10 " : "") * field_label(name, meta),
             ylabel=normalize ? "probability density" : "cells",
             title="Distribution of $(meta.label)")
@@ -490,11 +492,11 @@ function plot_phase_diagrams!(files, fields, metadata, cfg, output_dir, formats,
         x, y, weights = paired_sample_fields(fields, xname, yname, spec, stride, logx, logy)
         xe, ye, counts = histogram2d(x, y, bins; weights)
         fig = Figure(size=(820, 620))
-        ax = Axis(fig[1, 1], title=replace(name, '_' => ' '),
+        ax = latex_axis(fig[1, 1], title=replace(name, '_' => ' '),
             xlabel=(logx ? "log10 " : "") * field_label(xname, metadata[xname]),
             ylabel=(logy ? "log10 " : "") * field_label(yname, metadata[yname]))
         hm = heatmap!(ax, xe, ye, log10.(counts .+ 1); colormap=:magma)
-        Colorbar(fig[1, 2], hm, label="log10(N + 1)")
+        latex_colorbar(fig[1, 2], hm, label="log10(N + 1)")
         save_figure!(files, fig, output_dir, "phase_$(sanitize(name))", formats; overwrite)
     end
 end
@@ -548,7 +550,7 @@ function plot_relations!(files, fields, metadata, cfg, output_dir, formats, over
         push!(files, path)
         lower = max.(means .- deviations, logy ? eps(Float64) : -Inf)
         fig = Figure(size=(760, 520))
-        ax = Axis(fig[1, 1], title=replace(name, '_' => ' '),
+        ax = latex_axis(fig[1, 1], title=replace(name, '_' => ' '),
             xlabel=field_label(xname, metadata[xname]), ylabel=field_label(yname, metadata[yname]),
             xscale=logx ? log10 : identity, yscale=logy ? log10 : identity)
         band!(ax, centers, lower, means .+ deviations; color=(:steelblue, 0.22))
@@ -679,11 +681,11 @@ function plot_alignments!(files, fields, metadata, cfg, output_dir, formats, ove
         push!(files, path)
         fig = Figure(size=(1050, 520))
         angle_label = angle_coordinate == "cosine" ? "|cos(angle)|" : "angle [deg]"
-        ax1 = Axis(fig[1, 1], title="HRO ($(weighting) weighting)", xlabel=angle_label,
+        ax1 = latex_axis(fig[1, 1], title="HRO ($(weighting) weighting)", xlabel=angle_label,
             ylabel=field_label(condition_name, metadata[condition_name]), yscale=log10)
         hm = heatmap!(ax1, angles, centers, permutedims(histogram); colormap=:viridis)
-        Colorbar(fig[1, 2], hm, label="normalized gradient weight")
-        ax2 = Axis(fig[1, 3], title="Alignment parameter", xlabel=field_label(condition_name, metadata[condition_name]),
+        latex_colorbar(fig[1, 2], hm, label="normalized gradient weight")
+        ax2 = latex_axis(fig[1, 3], title="Alignment parameter", xlabel=field_label(condition_name, metadata[condition_name]),
             ylabel="zeta", xscale=log10)
         hlines!(ax2, [0.0]; color=:gray50, linestyle=:dash)
         valid = findall(isfinite, zeta)
@@ -692,7 +694,7 @@ function plot_alignments!(files, fields, metadata, cfg, output_dir, formats, ove
             errorbars!(ax2, centers[valid], zeta[valid], zeta_std[valid]; color=:purple)
         end
         ylims!(ax2, -1.05, 1.05)
-        Label(fig[0, :], replace(name, '_' => ' '); fontsize=22, tellwidth=false)
+        latex_layout_label(fig[0, :], replace(name, '_' => ' '); fontsize=22, tellwidth=false)
         save_figure!(files, fig, output_dir, "alignment_$(sanitize(name))", formats; overwrite)
     end
 end

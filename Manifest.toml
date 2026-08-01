@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "a5b7caf67aa9d551f7718e7da602987eb4e38713"
+project_hash = "8872769f06ef6dba0665fe9aed8138173d49d416"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -285,7 +285,7 @@ uuid = "a38c48d9-6df1-5ac9-9223-b6ada3b5572b"
 version = "0.1.0+0"
 
 [[deps.CubeAnalysis]]
-deps = ["CairoMakie", "FFTW", "FITSIO", "HDF5", "LinearAlgebra", "Printf", "Random", "Statistics", "TOML"]
+deps = ["CairoMakie", "FFTW", "FITSIO", "HDF5", "LaTeXStrings", "LinearAlgebra", "Printf", "Random", "Statistics", "TOML"]
 path = "."
 uuid = "4895a498-8e5d-47ab-9e43-0e1bfcbd90e7"
 version = "0.2.0"
