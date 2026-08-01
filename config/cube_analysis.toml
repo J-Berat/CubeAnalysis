@@ -212,6 +212,7 @@ log_x = true
 log_y = true
 thermal_overlay = "temperature"
 isotherms = [100.0, 1000.0, 8000.0]
+isotherm_colors = ["red", "orange", "yellow"]
 
 [[phase_diagrams]]
 name = "density_pressure"
@@ -222,6 +223,7 @@ log_x = true
 log_y = true
 thermal_overlay = "pressure"
 isotherms = [100.0, 1000.0, 8000.0]
+isotherm_colors = ["red", "orange", "yellow"]
 
 [[relations]]
 name = "magnetic_field_vs_density"

@@ -27,6 +27,9 @@ end
     equilibrium_n, equilibrium_t = CubeAnalysis.thermal_equilibrium_curve(0.01, 1000.0)
     @test length(equilibrium_n) == length(equilibrium_t) > 100
     @test all(n -> 0.01 <= n <= 1000.0, equilibrium_n)
+    @test CubeAnalysis.phase_isotherm_colors(Dict(), 3) == [:red, :orange, :yellow]
+    @test CubeAnalysis.phase_isotherm_colors(
+        Dict("isotherm_colors" => ["red", "orange"]), 3) == [:red, :orange, :red]
     uniform_weights = ones(Float32, 4, 4, 4)
     vx_test = [Float32(i) for i in 1:4, _ in 1:4, _ in 1:4]
     zeros_test = zeros(Float32, 4, 4, 4)

@@ -591,6 +591,12 @@ end
 
 axis_values(values, logarithmic) = logarithmic ? log10.(values) : values
 
+function phase_isotherm_colors(spec, count::Integer)
+    configured = string.(get(spec, "isotherm_colors", ["red", "orange", "yellow"]))
+    isempty(configured) && error("isotherm_colors must contain at least one color")
+    return [Symbol(configured[mod1(index, length(configured))]) for index in 1:count]
+end
+
 function plot_thermal_phase_overlays!(ax, spec, xedges, yedges, logx, logy)
     mode = lowercase(string(get(spec, "thermal_overlay", "none")))
     mode in ("none", "temperature", "pressure") ||
@@ -610,7 +616,9 @@ function plot_thermal_phase_overlays!(ax, spec, xedges, yedges, logx, logy)
     end
 
     xphysical = 10 .^ range(log10(physical_xmin), log10(physical_xmax); length=300)
-    for temperature in Float64.(get(spec, "isotherms", [100.0, 1000.0, 8000.0]))
+    isotherms = Float64.(get(spec, "isotherms", [100.0, 1000.0, 8000.0]))
+    colors = phase_isotherm_colors(spec, length(isotherms))
+    for (index, temperature) in enumerate(isotherms)
         temperature > 0 || error("Isotherm temperatures must be positive")
         isotherm_y = mode == "temperature" ? fill(temperature, length(xphysical)) :
             xphysical .* temperature
@@ -618,7 +626,7 @@ function plot_thermal_phase_overlays!(ax, spec, xedges, yedges, logx, logy)
         maximum(transformed_y) < first(yedges) && continue
         minimum(transformed_y) > last(yedges) && continue
         lines!(ax, axis_values(xphysical, logx), transformed_y;
-            color=:black, linestyle=:dash, linewidth=1.5,
+            color=colors[index], linestyle=:dash, linewidth=2.0,
             label=latex_legend_label("T = $(@sprintf("%.4g", temperature)) K"))
     end
     axislegend(ax; position=:rb)
