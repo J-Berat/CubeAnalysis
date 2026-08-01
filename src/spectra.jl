@@ -97,7 +97,11 @@ function spectral_fit(k, power, fit_range)
 end
 
 function vector_spectrum_details(vx, vy, vz; bins=80, box_size=(2π, 2π, 2π),
-        axis_order=("x", "y", "z"), remove_mean=true, weight=nothing, weight_power=0.5)
+        axis_order=("x", "y", "z"), remove_mean=true, weight=nothing,
+        weight_power=0.5, transform="none")
+    transform = lowercase(string(transform))
+    transform in ("none", "curl", "vorticity") ||
+        error("Vector-spectrum transform must be none, curl, or vorticity")
     shape = size(vx)
     size(vy) == shape && size(vz) == shape || error("Vector components must have equal sizes")
     fourier = Array{ComplexF32,3}[]
@@ -133,6 +137,10 @@ function vector_spectrum_details(vx, vy, vz; bins=80, box_size=(2π, 2π, 2π),
         bin = clamp(searchsortedlast(edges, sqrt(k2)), 1, bins)
         weight = (i == 1 || (iseven(shape[1]) && i == size(fourier[1], 1))) ? 1 : 2
         fx, fy, fz = fourier[1][i, j, k], fourier[2][i, j, k], fourier[3][i, j, k]
+        if transform in ("curl", "vorticity")
+            fx, fy, fz = im * (ky * fz - kz * fy), im * (kz * fx - kx * fz),
+                im * (kx * fy - ky * fx)
+        end
         energy = abs2(fx) + abs2(fy) + abs2(fz)
         longitudinal = abs2(kx * fx + ky * fy + kz * fz) / k2
         total[bin] += weight * energy
@@ -151,12 +159,65 @@ function log_spectrum_coordinates(k, power)
     return log10.(k[valid]), log10.(power[valid])
 end
 
+function nyquist_wavenumber(shape, box_size=(2π, 2π, 2π),
+        axis_order=("x", "y", "z"))
+    lengths = box_lengths(box_size, axis_order)
+    return minimum(π .* collect(shape) ./ collect(lengths))
+end
+
+function add_nyquist_marker!(axis, shape, box_size, axis_order; logarithmic_coordinates=true)
+    nyquist = nyquist_wavenumber(shape, box_size, axis_order)
+    position = logarithmic_coordinates ? log10(nyquist) : nyquist
+    vlines!(axis, [position]; color=:black, linestyle=:dashdot, linewidth=2.0,
+        label=latexstring("k_{\\mathrm{Nyq}}"))
+    return nyquist
+end
+
+function reference_power_law(k, power, slope; k_range=nothing, offset=0.0)
+    valid = findall(index -> isfinite(k[index]) && k[index] > 0 &&
+        isfinite(power[index]) && power[index] > 0, eachindex(k, power))
+    if !isnothing(k_range)
+        limits = Float64.(k_range)
+        length(limits) == 2 || error("A reference-slope range needs two values")
+        valid = filter(index -> limits[1] <= k[index] <= limits[2], valid)
+    end
+    length(valid) >= 2 || return (Float64[], Float64[])
+    x = log10.(Float64.(k[valid]))
+    observed = log10.(Float64.(power[valid]))
+    anchor = cld(length(x), 2)
+    y = observed[anchor] + Float64(offset) .+ Float64(slope) .* (x .- x[anchor])
+    return x, y
+end
+
+function reference_slope_label(slope)
+    isapprox(slope, -5 / 3; atol=1e-4) &&
+        return latexstring("\\mathrm{Kolmogorov}\\ k^{-5/3}")
+    isapprox(slope, -2; atol=1e-4) && return latexstring("\\mathrm{Burgers}\\ k^{-2}")
+    return latexstring("k^{", @sprintf("%.3g", slope), "}")
+end
+
+function add_reference_slopes!(axis, k, power, slopes; k_range=nothing,
+        compensation=0.0)
+    colors = (:crimson, :royalblue, :darkgreen, :purple)
+    count = length(slopes)
+    for (index, physical_slope) in enumerate(Float64.(slopes))
+        displayed_slope = physical_slope + compensation
+        offset = 0.20 * (index - (count + 1) / 2)
+        x, y = reference_power_law(k, power, displayed_slope; k_range, offset)
+        isempty(x) && continue
+        lines!(axis, x, y; color=colors[mod1(index, length(colors))],
+            linestyle=:dash, linewidth=2.0, label=reference_slope_label(physical_slope))
+    end
+    return axis
+end
+
 function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats, overwrite)
     grid = get(cfg, "grid", Dict())
     box_size = get(grid, "box_size", 1.0)
     axis_order = string.(get(grid, "axis_order", ["x", "y", "z"]))
     for spec in get(cfg, "vector_spectra", Any[])
         name = string(spec["name"]); components = string.(spec["components"])
+        transform = lowercase(string(get(spec, "transform", "none")))
         length(components) == 3 || error("Vector spectrum '$name' requires three components")
         all(haskey(fields, component) for component in components) ||
             error("Vector spectrum '$name' references missing fields")
@@ -169,7 +230,7 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
         result = vector_spectrum_details((fields[c] for c in components)...;
             bins=Int(get(spec, "bins", 80)), box_size, axis_order,
             remove_mean=Bool(get(spec, "remove_mean", true)), weight,
-            weight_power=Float64(get(spec, "weight_power", 0.5)))
+            weight_power=Float64(get(spec, "weight_power", 0.5)), transform)
         if save_data(cfg)
             path = joinpath(output_dir, "vector_spectrum_$(sanitize(name)).csv")
             write_text_output(path; overwrite) do io
@@ -183,15 +244,24 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
             push!(files, path)
         end
         box_unit = string(get(grid, "box_unit", "L"))
+        spectrum_label = transform in ("curl", "vorticity") ?
+            latexstring("\\log_{10}E_{\\omega}(k)") : latexstring("\\log_{10}E(k)")
         fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1],
             xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
-            ylabel=latexstring("\\log_{10}E(k)"), title=replace(name, '_' => ' '))
+            ylabel=spectrum_label, title=replace(name, '_' => ' '))
         logk, logtotal = log_spectrum_coordinates(result.k, result.total)
         lines!(ax, logk, logtotal; label=latex_legend_label("total"), linewidth=2.5)
-        logk, logsolenoidal = log_spectrum_coordinates(result.k, result.solenoidal)
-        lines!(ax, logk, logsolenoidal; label=latex_legend_label("solenoidal"), linewidth=2)
-        logk, logcompressive = log_spectrum_coordinates(result.k, result.compressive)
-        lines!(ax, logk, logcompressive; label=latex_legend_label("compressive"), linewidth=2)
+        if transform == "none"
+            logk, logsolenoidal = log_spectrum_coordinates(result.k, result.solenoidal)
+            lines!(ax, logk, logsolenoidal; label=latex_legend_label("solenoidal"), linewidth=2)
+            logk, logcompressive = log_spectrum_coordinates(result.k, result.compressive)
+            lines!(ax, logk, logcompressive; label=latex_legend_label("compressive"), linewidth=2)
+        end
+        slopes = get(spec, "reference_slopes", Float64[])
+        add_reference_slopes!(ax, result.k, result.total, slopes;
+            k_range=get(spec, "reference_range", nothing))
+        add_nyquist_marker!(ax, analysis_field_size(fields, first(components)),
+            box_size, axis_order)
         axislegend(ax)
         save_figure!(files, fig, output_dir, "vector_spectrum_$(sanitize(name))", formats; overwrite)
     end
@@ -259,6 +329,9 @@ function plot_cross_spectra!(files, fields, cfg, output_dir, formats, overwrite)
         fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1], xscale=log10,
             xlabel="k [physical]", ylabel="coherence", title=replace(name, '_' => ' '))
         lines!(ax, result.k, result.coherence; linewidth=2.5); ylims!(ax, 0, 1.05)
+        add_nyquist_marker!(ax, analysis_field_size(fields, first), box_size,
+            axis_order; logarithmic_coordinates=false)
+        axislegend(ax)
         save_figure!(files, fig, output_dir, "cross_spectrum_$(sanitize(name))", formats; overwrite)
     end
 end
@@ -320,6 +393,13 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
         logk, logpower = log_spectrum_coordinates(result.k, compensated)
         lines!(ax, logk, logpower; color=:darkorange, linewidth=2.5)
         scatter!(ax, logk, logpower; color=:darkorange, markersize=6)
+        if name in string.(get(settings, "velocity_fields", ["Vmag"]))
+            slopes = get(settings, "velocity_reference_slopes", [-5 / 3, -2.0])
+            add_reference_slopes!(ax, result.k, compensated, slopes;
+                k_range=get(settings, "reference_range", fit_range), compensation)
+        end
+        add_nyquist_marker!(ax, size(fields[name]), box_size, axis_order)
+        axislegend(ax)
         save_figure!(files, fig, output_dir, "spectrum_$(sanitize(name))", formats; overwrite)
     end
 end

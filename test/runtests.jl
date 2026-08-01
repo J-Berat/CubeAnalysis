@@ -106,6 +106,22 @@ end
         peak = argmax(vector_spectrum.total)
         @test vector_spectrum.compressive[peak] / vector_spectrum.total[peak] > 0.99
 
+        shear_spectrum = CubeAnalysis.vector_spectrum_details(zero_field, sinusoid,
+            zero_field; bins=24, box_size=(2π, 2π, 2π))
+        vorticity_spectrum = CubeAnalysis.vector_spectrum_details(zero_field, sinusoid,
+            zero_field; bins=24, box_size=(2π, 2π, 2π), transform="curl")
+        vorticity_peak = argmax(vorticity_spectrum.total)
+        @test vorticity_spectrum.k[vorticity_peak] ≈ 3.0 atol = 0.35
+        @test vorticity_spectrum.total[vorticity_peak] /
+            shear_spectrum.total[vorticity_peak] ≈ 9.0 rtol = 1e-5
+        @test vorticity_spectrum.compressive[vorticity_peak] ≤
+            1e-6 * vorticity_spectrum.total[vorticity_peak]
+        @test CubeAnalysis.nyquist_wavenumber(shape, lengths) ≈ 6.0
+        reference_x, reference_y = CubeAnalysis.reference_power_law(
+            [1.0, 2.0, 4.0, 8.0], ones(4), -5 / 3)
+        @test (reference_y[end] - reference_y[1]) /
+            (reference_x[end] - reference_x[1]) ≈ -5 / 3
+
         cross = CubeAnalysis.cross_spectrum_details(sinusoid, 2f0 .* sinusoid;
             bins=24, box_size=(2π, 2π, 2π))
         @test cross.coherence[argmax(abs.(cross.cross))] ≈ 1.0 atol = 1e-5

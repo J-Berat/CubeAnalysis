@@ -73,6 +73,12 @@ plain velocity or magnetic spectrum. `[[cross_spectra]]` entries accept
 `name`, `first`, `second`, and `bins`, and export the complex cross-spectrum
 and spectral coherence.
 
+The default configuration also produces the spectral vorticity power from
+`omega_hat = i k cross v_hat`. Scalar and vector spectral figures mark the
+physical Nyquist wavenumber. The unweighted velocity spectrum includes
+Kolmogorov `k^(-5/3)` and Burgers `k^(-2)` reference slopes; their normalization
+is visual and does not replace the reported spectral fit.
+
 ## HRO
 
 ```toml

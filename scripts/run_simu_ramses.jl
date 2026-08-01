@@ -83,6 +83,14 @@ function configure(base, input_dir, output_dir)
     cfg["spectra"]["bins"] = 64
     cfg["spectra"]["quantity"] = "shell"
     cfg["spectra"]["fit_range"] = [4kmin, 0.5kmax]
+    cfg["spectra"]["reference_range"] = [4kmin, 0.5kmax]
+    cfg["spectra"]["velocity_fields"] = ["Vmag"]
+    cfg["spectra"]["velocity_reference_slopes"] = [-5 / 3, -2.0]
+    for spectrum in get(cfg, "vector_spectra", Any[])
+        lowercase(string(get(spectrum, "name", ""))) == "velocity" || continue
+        spectrum["reference_slopes"] = [-5 / 3, -2.0]
+        spectrum["reference_range"] = [4kmin, 0.5kmax]
+    end
 
     cfg["cross_spectra"] = [Dict(
         "name" => "density_magnetic_magnitude",

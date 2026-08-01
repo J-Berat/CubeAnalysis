@@ -77,10 +77,26 @@ compensation = 0.0
 fit_range = [0.2, 10.0]
 # For non-periodic grids the default is "hann"; otherwise "none".
 window = "none"
+velocity_fields = ["Vmag"]
+velocity_reference_slopes = [-1.6666666667, -2.0]
+reference_range = [0.2, 10.0]
 
 [[vector_spectra]]
 name = "magnetic"
 components = ["Bx", "By", "Bz"]
+bins = 80
+
+[[vector_spectra]]
+name = "velocity"
+components = ["Vx", "Vy", "Vz"]
+bins = 80
+reference_slopes = [-1.6666666667, -2.0]
+reference_range = [0.2, 10.0]
+
+[[vector_spectra]]
+name = "vorticity"
+components = ["Vx", "Vy", "Vz"]
+transform = "curl"
 bins = 80
 
 [[anisotropic_spectra]]
