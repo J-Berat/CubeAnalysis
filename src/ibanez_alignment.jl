@@ -63,24 +63,46 @@ end
     return clamp(abs(sum(first[axis] * second[axis] for axis in 1:3)) / denominator, 0.0, 1.0)
 end
 
-function xi_from_counts(counts, block_counts, sample_counts, edges, minimum)
+function xi_from_counts(counts, block_counts, sample_counts, edges, minimum;
+        angle_counts=nothing, block_sample_counts=nothing,
+        parallel_bins=Int[], perpendicular_bins=Int[])
     centers = Float64[]; xi = Float64[]; uncertainty = Float64[]; samples = Int[]
     for bin in axes(counts, 1)
         sample_counts[bin] >= minimum || continue
         parallel, perpendicular = counts[bin, 1], counts[bin, 2]
         denominator = parallel + perpendicular
         denominator > 0 || continue
+        analytic_uncertainty = 0.0
+        if !isnothing(angle_counts)
+            histogram = Float64.(vec(@view angle_counts[bin, :]))
+            histogram ./= sum(histogram)
+            normalized_parallel = sum(histogram[parallel_bins])
+            normalized_perpendicular = sum(histogram[perpendicular_bins])
+            normalized_denominator = normalized_parallel + normalized_perpendicular
+            parallel_std = length(parallel_bins) > 1 ? std(histogram[parallel_bins]) : 0.0
+            perpendicular_std = length(perpendicular_bins) > 1 ?
+                std(histogram[perpendicular_bins]) : 0.0
+            normalized_denominator > 0 && (analytic_uncertainty = sqrt(4.0 *
+                (normalized_perpendicular^2 * parallel_std^2 +
+                 normalized_parallel^2 * perpendicular_std^2) /
+                normalized_denominator^4))
+        end
         block_xi = Float64[]
         for block in axes(block_counts, 2)
             block_parallel = block_counts[bin, block, 1]
             block_perpendicular = block_counts[bin, block, 2]
             block_denominator = block_parallel + block_perpendicular
-            block_denominator >= 20 || continue
+            block_samples = isnothing(block_sample_counts) ? block_denominator :
+                block_sample_counts[bin, block]
+            block_samples >= 20 && block_denominator > 0 || continue
             push!(block_xi, (block_parallel - block_perpendicular) / block_denominator)
         end
         push!(centers, sqrt(edges[bin] * edges[bin + 1]))
         push!(xi, (parallel - perpendicular) / denominator)
-        push!(uncertainty, length(block_xi) >= 3 ? std(block_xi) : NaN)
+        block_uncertainty = length(block_xi) >= 3 ? std(block_xi) : NaN
+        combined_uncertainty = isfinite(block_uncertainty) ?
+            max(analytic_uncertainty, block_uncertainty) : analytic_uncertainty
+        push!(uncertainty, combined_uncertainty)
         push!(samples, sample_counts[bin])
     end
     return HROXiCurve(centers, xi, uncertainty, samples)
@@ -106,30 +128,43 @@ end
 function ibanez_xi_analysis(density, bx, by, bz, vx, vy, vz;
         bins=25, density_range=(1.0e-2, 1.0e3), minimum=1000,
         blocks_per_axis=4, box_size=1.0, axis_order=("x", "y", "z"),
-        periodic=true, parallel_angle=22.5, perpendicular_angle=67.5)
+        periodic=nothing, gradient_periodic=false, parallel_cosine=0.75,
+        perpendicular_cosine=0.25, cosine_bins=40)
     bins > 1 || error("xi_bins must be greater than one")
     density_min, density_max = Float64.(density_range)
     0 < density_min < density_max || error("xi_density_range must be positive and increasing")
+    0 <= perpendicular_cosine < parallel_cosine <= 1 ||
+        error("Ibanez cosine thresholds must satisfy 0 <= perpendicular < parallel <= 1")
+    cosine_bins > 1 || error("xi_cosine_bins must be greater than one")
+    !isnothing(periodic) && (gradient_periodic = Bool(periodic))
     edges = 10 .^ range(log10(density_min), log10(density_max); length=bins + 1)
+    cosine_edges = collect(range(0.0, 1.0; length=cosine_bins + 1))
+    parallel_bins = [index for index in 1:cosine_bins if
+        cosine_edges[index] >= parallel_cosine]
+    perpendicular_bins = [index for index in 1:cosine_bins if
+        cosine_edges[index + 1] <= perpendicular_cosine]
     nblocks = blocks_per_axis^3
     counts_gradient = zeros(Float64, bins, 2)
     counts_velocity = zeros(Float64, bins, 2)
     blocks_gradient = zeros(Float64, bins, nblocks, 2)
     blocks_velocity = zeros(Float64, bins, nblocks, 2)
+    block_samples_gradient = zeros(Int, bins, nblocks)
+    block_samples_velocity = zeros(Int, bins, nblocks)
+    angles_gradient = zeros(Float64, bins, cosine_bins)
+    angles_velocity = zeros(Float64, bins, cosine_bins)
     samples_gradient = zeros(Int, bins); samples_velocity = zeros(Int, bins)
     spacings = grid_spacings(density, box_size; axis_order)
     sigma_v, velocity_mean = velocity_dispersion_1d(density, vx, vy, vz)
-    parallel_cosine = cosd(parallel_angle); perpendicular_cosine = cosd(perpendicular_angle)
     shape = size(density)
 
     @inbounds for cartesian in CartesianIndices(density)
         condition = Float64(density[cartesian])
-        isfinite(condition) && density_min <= condition <= density_max || continue
+        isfinite(condition) && density_min <= condition < density_max || continue
         bin = clamp(searchsortedlast(edges, condition), 1, bins)
         coordinates = Tuple(cartesian)
         magnetic = (Float64(bx[cartesian]), Float64(by[cartesian]), Float64(bz[cartesian]))
         all(isfinite, magnetic) || continue
-        gradient = Float64.(gradient_at(density, coordinates..., spacings, periodic))
+        gradient = Float64.(gradient_at(density, coordinates..., spacings, gradient_periodic))
         velocity = (Float64(vx[cartesian]) - velocity_mean[1],
             Float64(vy[cartesian]) - velocity_mean[2],
             Float64(vz[cartesian]) - velocity_mean[3])
@@ -137,6 +172,9 @@ function ibanez_xi_analysis(density, bx, by, bz, vx, vy, vz;
         gradient_cosine = absolute_cosine(gradient, magnetic)
         if isfinite(gradient_cosine)
             samples_gradient[bin] += 1
+            block_samples_gradient[bin, block] += 1
+            cosine_bin = clamp(searchsortedlast(cosine_edges, gradient_cosine), 1, cosine_bins)
+            angles_gradient[bin, cosine_bin] += 1
             category = xi_category(gradient_cosine, parallel_cosine, perpendicular_cosine)
             if category > 0
                 counts_gradient[bin, category] += 1
@@ -146,6 +184,9 @@ function ibanez_xi_analysis(density, bx, by, bz, vx, vy, vz;
         velocity_cosine = absolute_cosine(velocity, magnetic)
         if isfinite(velocity_cosine)
             samples_velocity[bin] += 1
+            block_samples_velocity[bin, block] += 1
+            cosine_bin = clamp(searchsortedlast(cosine_edges, velocity_cosine), 1, cosine_bins)
+            angles_velocity[bin, cosine_bin] += 1
             category = xi_category(velocity_cosine, parallel_cosine, perpendicular_cosine)
             if category > 0
                 counts_velocity[bin, category] += 1
@@ -155,13 +196,22 @@ function ibanez_xi_analysis(density, bx, by, bz, vx, vy, vz;
     end
 
     gradient_curve = xi_from_counts(counts_gradient, blocks_gradient,
-        samples_gradient, edges, minimum)
+        samples_gradient, edges, minimum; angle_counts=angles_gradient,
+        block_sample_counts=block_samples_gradient, parallel_bins, perpendicular_bins)
     velocity_curve = xi_from_counts(counts_velocity, blocks_velocity,
-        samples_velocity, edges, minimum)
+        samples_velocity, edges, minimum; angle_counts=angles_velocity,
+        block_sample_counts=block_samples_velocity, parallel_bins, perpendicular_bins)
     return (gradient=gradient_curve, velocity=velocity_curve,
         gradient_global=global_xi(counts_gradient, blocks_gradient, samples_gradient),
         velocity_global=global_xi(counts_velocity, blocks_velocity, samples_velocity),
         sigma_v=sigma_v, edges=collect(edges))
+end
+
+function xi_plot_limits(curves, fallback)
+    centers = reduce(vcat, (curve.centers for curve in curves); init=Float64[])
+    isempty(centers) && return fallback
+    return (10.0^floor(log10(minimum(centers))),
+        10.0^ceil(log10(maximum(centers))))
 end
 
 function add_xi_background!(axis, xlimits)
@@ -215,8 +265,12 @@ function plot_ibanez_xi!(files, fields, metadata, cfg, spec, output_dir, formats
         blocks_per_axis=Int(get(spec, "xi_blocks_per_axis", 4)),
         box_size=get(grid, "box_size", 1.0),
         axis_order=string.(get(grid, "axis_order", ["x", "y", "z"])),
-        periodic=Bool(get(grid, "periodic", true)))
-    xlimits = (first(result.edges), last(result.edges))
+        gradient_periodic=Bool(get(spec, "xi_gradient_periodic", false)),
+        parallel_cosine=Float64(get(spec, "xi_parallel_cosine", 0.75)),
+        perpendicular_cosine=Float64(get(spec, "xi_perpendicular_cosine", 0.25)),
+        cosine_bins=Int(get(spec, "xi_cosine_bins", 40)))
+    xlimits = xi_plot_limits((result.gradient, result.velocity),
+        (first(result.edges), last(result.edges)))
     condition_label = field_label(string(get(spec, "condition", scalar_name)), metadata[scalar_name])
     figure = Figure(size=(1100, 420), fontsize=18)
     gradient_axis = latex_axis(figure[1, 1]; xlabel=condition_label,

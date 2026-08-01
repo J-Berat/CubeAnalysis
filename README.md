@@ -95,6 +95,18 @@ bootstrap_seed = 1234
 
 The CSV contains the alignment parameter and its bootstrap uncertainty.
 
+Two distinct alignment figures are produced when `xi_plot=true`:
+
+- `alignment_*.png` is the configurable generic HRO (quantile-conditioned bins,
+  optional gradient weighting and the Soler-style angular sectors);
+- `xi_*.png` reproduces the convention used by
+  `Desktop/alignement B_n/make_ibanez_alignment.jl`: 40 cosine bins,
+  parallel `|cos(phi)| >= 0.75`, perpendicular `|cos(phi)| <= 0.25`, and a
+  non-periodic central gradient at the box boundaries.
+
+These figures answer related but non-identical questions and should not be
+compared point-for-point unless their definitions are made identical.
+
 ## Masks and weights
 
 Every phase-diagram or conditional-relation entry may include:

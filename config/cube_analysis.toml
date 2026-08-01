@@ -277,3 +277,7 @@ xi_bins = 25
 xi_density_range = [1.0e-2, 1.0e3]
 xi_minimum_per_bin = 1000
 xi_blocks_per_axis = 4
+xi_cosine_bins = 40
+xi_parallel_cosine = 0.75
+xi_perpendicular_cosine = 0.25
+xi_gradient_periodic = false # matches Desktop/alignement B_n

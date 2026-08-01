@@ -62,6 +62,14 @@ end
     @test aligned_result.gradient_global.xi ≈ 1.0
     @test aligned_result.velocity_global.xi ≈ 1.0
     @test aligned_result.sigma_v > 0
+    moderately_aligned_result = CubeAnalysis.ibanez_xi_analysis(aligned_density,
+        fill(0.8f0, size(aligned_density)), fill(0.6f0, size(aligned_density)), aligned_zero,
+        aligned_x, aligned_zero, aligned_zero;
+        bins=4, density_range=(0.5, 10.0), minimum=1,
+        blocks_per_axis=2, periodic=false)
+    @test moderately_aligned_result.gradient_global.xi ≈ 1.0
+    @test CubeAnalysis.xi_category(0.8, 0.75, 0.25) == 1
+    @test CubeAnalysis.xi_category(0.3, 0.75, 0.25) == 0
     xi_rendered = mktempdir() do directory
         figure = CubeAnalysis.Figure(size=(500, 350))
         axis = CubeAnalysis.latex_axis(figure[1, 1]; xscale=log10)
