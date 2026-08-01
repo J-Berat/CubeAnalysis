@@ -233,6 +233,13 @@ end
 
 function plot_xi_vs_sigma_v!(files, simulation_dirs, output_dir, formats;
         overwrite=false, box_size=(50.0, 50.0, 50.0), axis_order=("x", "y", "z"))
+    pending_formats = overwrite ? collect(formats) : filter(formats) do format
+        !isfile(joinpath(output_dir, "xi_vs_sigma_v.$(lowercase(string(format)))"))
+    end
+    if isempty(pending_formats)
+        @info "Global xi versus velocity-dispersion figure already exists; skipping" output_dir
+        return files
+    end
     sigma_values = Float64[]; gradient_values = Float64[]; velocity_values = Float64[]
     gradient_errors = Float64[]; velocity_errors = Float64[]
     for directory in simulation_dirs
@@ -275,6 +282,6 @@ function plot_xi_vs_sigma_v!(files, simulation_dirs, output_dir, formats;
     xlims!(axis, xlimits...); ylims!(axis, -1.0, 1.0)
     axis.xgridvisible = false; axis.ygridvisible = false
     axislegend(axis; position=:rb)
-    save_figure!(files, figure, output_dir, "xi_vs_sigma_v", formats; overwrite)
+    save_figure!(files, figure, output_dir, "xi_vs_sigma_v", pending_formats; overwrite)
     return files
 end

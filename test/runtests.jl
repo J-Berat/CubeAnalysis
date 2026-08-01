@@ -56,6 +56,15 @@ end
         length(files) == 1 && isfile(only(files))
     end
     @test xi_rendered
+    xi_existing_is_skipped = mktempdir() do directory
+        existing = joinpath(directory, "xi_vs_sigma_v.png")
+        write(existing, "preserve me")
+        files = String[]
+        result = CubeAnalysis.plot_xi_vs_sigma_v!(files, ["missing simulation"],
+            directory, ["png"]; overwrite=false)
+        result === files && isempty(files) && read(existing, String) == "preserve me"
+    end
+    @test xi_existing_is_skipped
     cube = reshape(Float32.(1:512), 8, 8, 8)
     gx, gy, gz = periodic_gradient(cube, 8.0)
     @test size(gx) == size(cube)
