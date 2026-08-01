@@ -1,0 +1,137 @@
+# Example for one HDF5 file containing several 3-D datasets.
+[run]
+input_dir = "/path/to/simulation"
+output_dir = "../outputs/hdf5_example"
+formats = ["png", "pdf"]
+overwrite = true
+atomic_directory = true
+sample_stride = 37
+field_by_field = true
+memory_budget_gb = 0
+
+[grid]
+box_size = [50.0, 50.0, 50.0]
+axis_order = ["x", "y", "z"]
+box_unit = "pc"
+periodic = true
+
+[plots]
+summary = true
+slices = true
+projections = true
+histograms = true
+phase_diagrams = true
+relations = true
+power_spectra = true
+alignments = true
+
+[slices]
+axes = ["x", "y", "z"]
+positions = [0.25, 0.50, 0.75]
+fields = ["density", "temperature", "Bmag", "Vmag"]
+
+[projections]
+axes = ["x", "y", "z"]
+statistics = ["mean", "sum", "max"]
+fields = ["density", "temperature", "Bmag", "Vmag"]
+
+[histograms]
+bins = 80
+normalize = true
+fields = ["density", "temperature", "Bmag", "Vmag"]
+
+[spectra]
+bins = 80
+remove_mean = true
+fields = ["density", "temperature", "Bmag", "Vmag"]
+
+# Repeat the same HDF5 filename and choose a dataset for each field.
+# Add permutation = [3, 2, 1] if datasets are stored as (z, y, x).
+[fields.density]
+file = "simulation.h5"
+dataset = "/fields/density"
+label = "number density"
+unit = "cm^-3"
+log = true
+colormap = "magma"
+chunk_mb = 64
+
+[fields.temperature]
+file = "simulation.h5"
+dataset = "/fields/temperature"
+label = "temperature"
+unit = "K"
+log = true
+colormap = "inferno"
+
+[fields.Bx]
+file = "simulation.h5"
+dataset = "/fields/Bx"
+
+[fields.By]
+file = "simulation.h5"
+dataset = "/fields/By"
+
+[fields.Bz]
+file = "simulation.h5"
+dataset = "/fields/Bz"
+
+[fields.Vx]
+file = "simulation.h5"
+dataset = "/fields/Vx"
+
+[fields.Vy]
+file = "simulation.h5"
+dataset = "/fields/Vy"
+
+[fields.Vz]
+file = "simulation.h5"
+dataset = "/fields/Vz"
+
+[[derived.vectors]]
+name = "Bmag"
+components = ["Bx", "By", "Bz"]
+factor = 1000.0
+label = "|B|"
+unit = "microG"
+log = true
+
+[[derived.vectors]]
+name = "Vmag"
+components = ["Vx", "Vy", "Vz"]
+label = "|v|"
+unit = "km/s"
+log = true
+
+[[derived.products]]
+name = "pressure_over_k"
+factors = ["density", "temperature"]
+label = "P/k_B"
+unit = "K cm^-3"
+log = true
+
+[[phase_diagrams]]
+name = "density_temperature"
+x = "density"
+y = "temperature"
+bins = 160
+log_x = true
+log_y = true
+
+[[relations]]
+name = "magnetic_field_vs_density"
+x = "density"
+y = "Bmag"
+bins = 30
+minimum_per_bin = 100
+log_x = true
+log_y = true
+
+[[alignments]]
+name = "density_gradient_vs_B"
+scalar = "density"
+vector = ["Bx", "By", "Bz"]
+condition = "density"
+condition_bins = 12
+angle_bins = 30
+minimum_per_bin = 100

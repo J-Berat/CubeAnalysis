@@ -1,0 +1,239 @@
+# All relative paths are resolved from this parameter file.
+[run]
+input_dir = "/Users/jb270005/Desktop/simu_RAMSES/d1cf05bx10rms18000nograv1024"
+output_dir = "../outputs/example"
+formats = ["png", "pdf"]
+overwrite = true
+atomic_directory = true
+sample_stride = 37
+field_by_field = true
+# Set to 0 for unlimited. FFT/HRO stages fail early if their working set is larger.
+memory_budget_gb = 0
+
+[grid]
+box_size = [50.0, 50.0, 50.0]
+axis_order = ["x", "y", "z"]
+box_unit = "pc"
+periodic = true
+
+[render]
+width = 1200
+height = 800
+fontsize = 16
+colormap = "viridis"
+quantile_low = 0.005
+quantile_high = 0.995
+
+[plots]
+summary = true
+quality = true
+slices = true
+projections = true
+histograms = true
+phase_diagrams = true
+relations = true
+power_spectra = true
+alignments = true
+vector_spectra = true
+cross_spectra = false
+advanced_diagnostics = true
+topology = false
+anisotropic_spectra = false
+directional_structure_functions = false
+
+[slices]
+axes = ["x", "y", "z"]
+positions = [0.25, 0.50, 0.75]
+# Optional: restrict to selected fields, e.g. fields = ["density", "Bmag"]
+
+[projections]
+axes = ["x", "y", "z"]
+statistics = ["mean", "sum", "max"]
+# Optional: fields = ["density", "temperature", "Bmag", "Vmag"]
+
+[histograms]
+bins = 80
+normalize = true
+# Optional: fields = ["density", "temperature", "Bmag", "Vmag"]
+
+[spectra]
+bins = 80
+remove_mean = true
+fields = ["density", "temperature", "Bmag", "Vmag"]
+quantity = "shell" # "shell" energy or per-mode "average"
+compensation = 0.0
+fit_range = [0.2, 10.0]
+# For non-periodic grids the default is "hann"; otherwise "none".
+window = "none"
+
+[[vector_spectra]]
+name = "magnetic"
+components = ["Bx", "By", "Bz"]
+bins = 80
+
+[[anisotropic_spectra]]
+name = "density_relative_to_mean_B"
+field = "density"
+guide_fields = ["Bx", "By", "Bz"]
+parallel_bins = 32
+perpendicular_bins = 32
+radial_bins = 40
+
+[[directional_structure_functions]]
+name = "velocity_directional"
+components = ["Vx", "Vy", "Vz"]
+orders = [1, 2, 3, 4]
+fit_range = [0.2, 10.0]
+
+[[topology]]
+name = "dense_gas_excursions"
+field = "density"
+quantiles = [0.50, 0.70, 0.80, 0.90, 0.95, 0.99]
+above = true
+
+[[vector_spectra]]
+name = "kinetic"
+components = ["Vx", "Vy", "Vz"]
+weight_field = "density"
+weight_power = 0.5 # spectrum of sqrt(rho) v
+bins = 80
+
+[diagnostics]
+structure_fields = ["density", "Vmag"]
+structure_orders = [1, 2, 3]
+structure_samples = 100000
+correlation_fields = ["density", "Bmag"]
+correlation_bins = 60
+physics = true
+density = "density"
+temperature = "temperature"
+velocity = ["Vx", "Vy", "Vz"]
+magnetic = ["Bx", "By", "Bz"]
+mean_molecular_weight = 1.27
+velocity_to_cms = 1.0e5
+magnetic_to_gauss = 1.0e-3
+
+# Each field points to one 3-D FITS cube.
+[fields.density]
+file = "density.fits"
+label = "number density"
+unit = "cm^-3"
+log = true
+colormap = "magma"
+
+[fields.temperature]
+file = "temperature.fits"
+label = "temperature"
+unit = "K"
+log = true
+colormap = "inferno"
+
+[fields.Bx]
+file = "Bx.fits"
+label = "B_x"
+unit = "mG"
+log = false
+
+[fields.By]
+file = "By.fits"
+label = "B_y"
+unit = "mG"
+log = false
+
+[fields.Bz]
+file = "Bz.fits"
+label = "B_z"
+unit = "mG"
+log = false
+
+[fields.Vx]
+file = "Vx.fits"
+label = "v_x"
+unit = "km/s"
+log = false
+
+[fields.Vy]
+file = "Vy.fits"
+label = "v_y"
+unit = "km/s"
+log = false
+
+[fields.Vz]
+file = "Vz.fits"
+label = "v_z"
+unit = "km/s"
+log = false
+
+[[derived.vectors]]
+name = "Bmag"
+components = ["Bx", "By", "Bz"]
+factor = 1000.0
+label = "|B|"
+unit = "microG"
+log = true
+colormap = "plasma"
+
+[[derived.vectors]]
+name = "Vmag"
+components = ["Vx", "Vy", "Vz"]
+factor = 1.0
+label = "|v|"
+unit = "km/s"
+log = true
+colormap = "viridis"
+
+[[derived.products]]
+name = "pressure_over_k"
+factors = ["density", "temperature"]
+factor = 1.0
+label = "P/k_B"
+unit = "K cm^-3"
+log = true
+colormap = "thermal"
+
+[[phase_diagrams]]
+name = "density_temperature"
+x = "density"
+y = "temperature"
+bins = 160
+log_x = true
+log_y = true
+
+[[phase_diagrams]]
+name = "density_pressure"
+x = "density"
+y = "pressure_over_k"
+bins = 160
+log_x = true
+log_y = true
+
+[[relations]]
+name = "magnetic_field_vs_density"
+x = "density"
+y = "Bmag"
+bins = 30
+minimum_per_bin = 100
+weighting = "uniform" # or "gradient"
+angle_coordinate = "cosine" # or "degrees"
+bootstrap_replicates = 200
+bootstrap_seed = 1234
+log_x = true
+log_y = true
+
+[[relations]]
+name = "velocity_vs_density"
+x = "density"
+y = "Vmag"
+bins = 30
+minimum_per_bin = 100
+log_x = true
+log_y = true
+
+[[alignments]]
+name = "density_gradient_vs_B"
+scalar = "density"
+vector = ["Bx", "By", "Bz"]
+condition = "density"
+condition_bins = 12
+angle_bins = 30
+minimum_per_bin = 100

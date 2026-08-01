@@ -1,0 +1,28 @@
+name = "CubeAnalysis"
+uuid = "4895a498-8e5d-47ab-9e43-0e1bfcbd90e7"
+authors = ["Jack Berat"]
+version = "0.2.0"
+
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+FITSIO = "525bcba6-941b-5504-bd06-fd0dc1a4d2eb"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[compat]
+CairoMakie = "0.15"
+FFTW = "1"
+FITSIO = "0.17"
+HDF5 = "0.17"
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

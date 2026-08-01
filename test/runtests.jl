@@ -1,0 +1,268 @@
+using CubeAnalysis
+using FITSIO
+using HDF5
+using Test
+
+function write_cube(path, cube)
+    FITS(path, "w") do fits
+        write(fits, cube)
+    end
+end
+
+@testset "CubeAnalysis" begin
+    cube = reshape(Float32.(1:512), 8, 8, 8)
+    gx, gy, gz = periodic_gradient(cube, 8.0)
+    @test size(gx) == size(cube)
+    @test size(gy) == size(cube)
+    @test size(gz) == size(cube)
+    k, power, modes = isotropic_spectrum(cube; bins=8)
+    @test length(k) == length(power) == length(modes)
+    @test all(power .>= 0)
+
+    @testset "analytic geometry and spectra" begin
+        shape = (32, 24, 16)
+        lengths = (2π, 4π, π)
+        wave = Array{Float32}(undef, shape)
+        for kindex in 1:shape[3], jindex in 1:shape[2], iindex in 1:shape[1]
+            wave[iindex, jindex, kindex] = sin(2π * (iindex - 1) / shape[1]) +
+                sin(2π * (jindex - 1) / shape[2]) + sin(2π * (kindex - 1) / shape[3])
+        end
+        gx, gy, gz = periodic_gradient(wave, lengths)
+        @test gx[1, 1, 1] ≈ 1.0 atol = 0.02
+        @test gy[1, 1, 1] ≈ 0.5 atol = 0.02
+        @test gz[1, 1, 1] ≈ 2.0 atol = 0.06
+
+        sinusoid = [Float32(sin(3 * 2π * (i - 1) / shape[1]))
+            for i in 1:shape[1], _ in 1:shape[2], _ in 1:shape[3]]
+        physical_k, physical_power, _ = isotropic_spectrum(sinusoid; bins=24,
+            box_size=(2π, 2π, 2π))
+        @test physical_k[argmax(physical_power)] ≈ 3.0 atol = 0.35
+
+        zero_field = zeros(Float32, shape)
+        vector_spectrum = CubeAnalysis.vector_spectrum_details(sinusoid, zero_field,
+            zero_field; bins=24, box_size=(2π, 2π, 2π))
+        peak = argmax(vector_spectrum.total)
+        @test vector_spectrum.compressive[peak] / vector_spectrum.total[peak] > 0.99
+
+        cross = CubeAnalysis.cross_spectrum_details(sinusoid, 2f0 .* sinusoid;
+            bins=24, box_size=(2π, 2π, 2π))
+        @test cross.coherence[argmax(abs.(cross.cross))] ≈ 1.0 atol = 1e-5
+        lags, orders, structure, samples = CubeAnalysis.structure_functions(sinusoid;
+            lags=[1, 2], orders=[1, 2, 3], samples_per_lag=2_000, seed=8)
+        @test size(structure) == (2, 3)
+        @test all(samples .> 0)
+        radius, correlation, _, _ = CubeAnalysis.radial_autocorrelation(sinusoid;
+            bins=12, box_size=(2π, 2π, 2π))
+        @test !isempty(radius)
+        @test correlation[1] <= 1.0 + 1e-5
+
+        anisotropic = CubeAnalysis.anisotropic_spectrum(sinusoid, (1.0, 0.0, 0.0);
+            parallel_bins=12, perpendicular_bins=12, radial_bins=12,
+            box_size=(2π, 2π, 2π))
+        @test sum(anisotropic.parallel) > 100 * sum(anisotropic.perpendicular)
+
+        directional = CubeAnalysis.directional_structure_functions(
+            [sinusoid, zero_field, zero_field]; lags=[1, 2], orders=[2, 3, 4],
+            box_size=(2π, 2π, 2π))
+        x_rows = filter(row -> row.axis == "x", directional)
+        @test all(row -> row.longitudinal[1] > 0, x_rows)
+        @test all(row -> row.transverse[1] == 0, x_rows)
+
+        excursion = zeros(Float32, 4, 4, 4)
+        excursion[1, 1, 1] = 1; excursion[4, 4, 4] = 1
+        topology = CubeAnalysis.excursion_metrics(excursion, 0.5; periodic=false)
+        @test topology.volume_fraction == 2 / 64
+        @test topology.components == 2
+        @test topology.largest_fraction == 0.5
+    end
+
+    @testset "HRO definitions" begin
+        scalar = [Float32(i) for i in 1:8, _ in 1:8, _ in 1:8]
+        condition = @. 1f0 + scalar / 100
+        ones_field = ones(Float32, size(scalar)); zeros_field = zero(ones_field)
+        parallel = CubeAnalysis.alignment_analysis(scalar, ones_field, zeros_field,
+            zeros_field, condition; periodic=false, weighting="uniform", minimum=2)
+        perpendicular = CubeAnalysis.alignment_analysis(scalar, zeros_field, ones_field,
+            zeros_field, condition; periodic=false, weighting="uniform", minimum=2)
+        @test all(value -> value ≈ 1, filter(isfinite, parallel[4]))
+        @test all(value -> value ≈ -1, filter(isfinite, perpendicular[4]))
+    end
+
+    mktempdir() do directory
+        input_dir = joinpath(directory, "input")
+        output_dir = joinpath(directory, "output")
+        mkpath(input_dir)
+        density = @. 0.1f0 + cube / 100
+        temperature = @. 100f0 + cube
+        bx = @. sin(cube / 20)
+        by = @. cos(cube / 25)
+        bz = fill(0.5f0, size(cube))
+        for (name, values) in (
+            "density" => density, "temperature" => temperature,
+            "Bx" => bx, "By" => by, "Bz" => bz,
+        )
+            write_cube(joinpath(input_dir, "$name.fits"), values)
+        end
+
+        config = joinpath(directory, "test.toml")
+        open(config, "w") do io
+            print(io, """
+            [run]
+            input_dir = "$input_dir"
+            output_dir = "$output_dir"
+            formats = ["png"]
+            sample_stride = 2
+            atomic_directory = true
+
+            [plots]
+            summary = true
+            slices = true
+            projections = true
+            histograms = true
+            phase_diagrams = true
+            relations = true
+            power_spectra = true
+            alignments = true
+
+            [slices]
+            axes = ["z"]
+            positions = [0.5]
+
+            [projections]
+            axes = ["z"]
+            statistics = ["mean"]
+
+            [histograms]
+            bins = 12
+
+            [spectra]
+            bins = 8
+            fields = ["density", "Bmag"]
+
+            [fields.density]
+            file = "density.fits"
+            log = true
+
+            [fields.temperature]
+            file = "temperature.fits"
+            log = true
+
+            [fields.Bx]
+            file = "Bx.fits"
+
+            [fields.By]
+            file = "By.fits"
+
+            [fields.Bz]
+            file = "Bz.fits"
+
+            [[derived.vectors]]
+            name = "Bmag"
+            components = ["Bx", "By", "Bz"]
+            log = true
+
+            [[phase_diagrams]]
+            name = "n_T"
+            x = "density"
+            y = "temperature"
+            bins = 12
+            log_x = true
+            log_y = true
+
+            [[relations]]
+            name = "B_n"
+            x = "density"
+            y = "Bmag"
+            bins = 6
+            minimum_per_bin = 2
+            log_x = true
+            log_y = true
+
+            [[alignments]]
+            name = "grad_n_B"
+            scalar = "density"
+            vector = ["Bx", "By", "Bz"]
+            condition_bins = 5
+            angle_bins = 8
+            minimum_per_bin = 2
+            """)
+        end
+
+        result = run_analysis(config)
+        @test result.output_dir == output_dir
+        @test isfile(joinpath(output_dir, "cube_summary.csv"))
+        @test isfile(joinpath(output_dir, "phase_n_t.png"))
+        @test isfile(joinpath(output_dir, "spectrum_density.csv"))
+        @test isfile(joinpath(output_dir, "alignment_grad_n_b.csv"))
+        @test isfile(joinpath(output_dir, "analysis_manifest.toml"))
+        @test length(result.files) >= 10
+
+        hdf5_path = joinpath(input_dir, "simulation.h5")
+        HDF5.h5open(hdf5_path, "w") do file
+            file["/fields/density"] = permutedims(density, (3, 2, 1))
+            file["/fields/temperature"] = temperature
+        end
+        hdf5_output = joinpath(directory, "hdf5_output")
+        hdf5_config = joinpath(directory, "hdf5.toml")
+        open(hdf5_config, "w") do io
+            print(io, """
+            [run]
+            input_dir = "$input_dir"
+            output_dir = "$hdf5_output"
+            field_by_field = true
+            memory_budget_gb = 0.01
+
+            [plots]
+            summary = true
+
+            [fields.density]
+            file = "simulation.h5"
+            dataset = "/fields/density"
+            permutation = [3, 2, 1]
+            scale = 2.0
+
+            [fields.temperature]
+            file = "simulation.h5"
+            dataset = "/fields/temperature"
+            """)
+        end
+        hdf5_cfg = load_config(hdf5_config)
+        hdf5_fields, _ = load_fields(hdf5_cfg)
+        @test hdf5_fields isa CubeAnalysis.LazyFieldStore
+        @test hdf5_fields["density"] == 2f0 .* density
+        @test hdf5_fields["temperature"] == temperature
+        hdf5_result = run_analysis(hdf5_config)
+        @test isfile(joinpath(hdf5_result.output_dir, "cube_summary.csv"))
+
+        series_output = joinpath(directory, "series_output")
+        series_config = joinpath(directory, "series.toml")
+        open(series_config, "w") do io
+            print(io, """
+            [run]
+            input_dir = "$input_dir"
+            output_dir = "$series_output"
+            field_by_field = true
+
+            [plots]
+            summary = true
+
+            [fields.density]
+            file = "density.fits"
+
+            [[snapshots]]
+            name = "first"
+            time = 0.0
+            input_dir = "$input_dir"
+
+            [[snapshots]]
+            name = "second"
+            time = 1.0
+            input_dir = "$input_dir"
+            """)
+        end
+        series_result = run_analysis(series_config)
+        @test isfile(joinpath(series_result.output_dir, "snapshot_evolution.csv"))
+        @test isfile(joinpath(series_result.output_dir, "first", "cube_summary.csv"))
+        @test length(readlines(joinpath(series_result.output_dir, "snapshot_evolution.csv"))) == 3
+    end
+end
