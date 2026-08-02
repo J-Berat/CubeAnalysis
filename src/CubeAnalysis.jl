@@ -383,7 +383,7 @@ function plot_slices!(files, fields, metadata, cfg, output_dir, formats, overwri
     render = get(cfg, "render", Dict())
     for name in selected_fields(settings, fields)
         cube, meta = fields[name], metadata[name]
-        fig = Figure(size=(Int(get(render, "width", 1200)),
+        fig = publication_figure(size=(Int(get(render, "width", 1200)),
             max(360, 330 * length(positions))), fontsize=Int(get(render, "fontsize", 16)))
         for (row, position) in enumerate(positions), (column, axis) in enumerate(axes)
             map, index = slice_map(cube, axis, position)
@@ -413,7 +413,7 @@ function plot_projections!(files, fields, metadata, cfg, output_dir, formats, ov
         cube, meta = fields[name], metadata[name]
         is_column_density = name in column_density_fields
         field_statistics = is_column_density ? ["column density"] : statistics
-        fig = Figure(size=(Int(get(render, "width", 1200)),
+        fig = publication_figure(size=(Int(get(render, "width", 1200)),
             max(360, 330 * length(field_statistics))), fontsize=Int(get(render, "fontsize", 16)))
         for (row, statistic) in enumerate(field_statistics), (column, axis) in enumerate(axes)
             map = is_column_density ? column_density_map(cube, axis, cfg) :
@@ -477,13 +477,14 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
         values = meta.logscale ? log10.(sampled) : sampled
         centers, counts, width = histogram_counts(values, bins)
         normalize && (counts ./= sum(counts) * width)
-        fig = Figure(size=(760, 520))
+        fig = publication_figure()
         ax = latex_axis(fig[1, 1],
             xlabel=(meta.logscale ? "log10 " : "") * field_label(name, meta),
             ylabel=normalize ? "probability density" : "cells",
             xlogcoordinates=meta.logscale,
             title="Distribution of $(meta.label)")
-        barplot!(ax, centers, counts; width=width, color=:steelblue)
+        barplot!(ax, centers, counts; width=0.94width, color=(PLOT_BLUE, 0.78),
+            strokecolor=PLOT_BLUE, strokewidth=0.7)
         save_figure!(files, fig, output_dir, "histogram_$(sanitize(name))", formats; overwrite)
     end
 
@@ -505,7 +506,7 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
         units = unique(metadata[name].unit for name in names)
         unit = length(units) == 1 ? only(units) : ""
         xlabel = string(get(group, "xlabel", isempty(unit) ? "field value" : "field value [$unit]"))
-        fig = Figure(size=(760, 520))
+        fig = publication_figure()
         ax = latex_axis(fig[1, 1],
             xlabel=(logscale ? "log10 " : "") * xlabel,
             ylabel=normalize ? "probability density" : "cells",
@@ -514,10 +515,11 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
         for (index, name) in enumerate(names)
             centers, counts, width = histogram_counts(values[index], edges)
             normalize && (counts ./= sum(counts) * width)
-            lines!(ax, centers, counts; linewidth=2.5,
+            lines!(ax, centers, counts; linewidth=2.6, color=series_color(index),
+                linestyle=series_linestyle(index),
                 label=latex_legend_label(metadata[name].label))
         end
-        axislegend(ax)
+        publication_legend!(ax)
         save_figure!(files, fig, output_dir, "histogram_$(sanitize(group_name))", formats; overwrite)
     end
 end
@@ -615,7 +617,7 @@ function plot_thermal_phase_overlays!(ax, spec, xedges, yedges, logx, logy)
     if !isempty(densities)
         equilibrium_y = mode == "temperature" ? temperatures : densities .* temperatures
         lines!(ax, axis_values(densities, logx), axis_values(equilibrium_y, logy);
-            color=:deepskyblue, linewidth=3.0,
+            color=PLOT_BLUE, linewidth=3.0,
             label=latex_legend_label("thermal equilibrium"))
     end
 
@@ -633,7 +635,7 @@ function plot_thermal_phase_overlays!(ax, spec, xedges, yedges, logx, logy)
             color=colors[index], linestyle=:dash, linewidth=2.0,
             label=latex_legend_label("T = $(@sprintf("%.4g", temperature)) K"))
     end
-    axislegend(ax; position=:rb)
+    publication_legend!(ax; position=:rb)
     return true
 end
 
@@ -647,7 +649,7 @@ function plot_phase_diagrams!(files, fields, metadata, cfg, output_dir, formats,
         bins = Int(get(spec, "bins", 120))
         x, y, weights = paired_sample_fields(fields, xname, yname, spec, stride, logx, logy)
         xe, ye, counts = histogram2d(x, y, bins; weights)
-        fig = Figure(size=(820, 620))
+        fig = publication_figure(size=(900, 680))
         ax = latex_axis(fig[1, 1], title=replace(name, '_' => ' '),
             xlabel=(logx ? "log10 " : "") * field_label(xname, metadata[xname]),
             ylabel=(logy ? "log10 " : "") * field_label(yname, metadata[yname]),
@@ -711,12 +713,13 @@ function plot_relations!(files, fields, metadata, cfg, output_dir, formats, over
             push!(files, path)
         end
         lower = max.(means .- deviations, logy ? eps(Float64) : -Inf)
-        fig = Figure(size=(760, 520))
+        fig = publication_figure()
         ax = latex_axis(fig[1, 1], title=replace(name, '_' => ' '),
             xlabel=field_label(xname, metadata[xname]), ylabel=field_label(yname, metadata[yname]),
             xscale=logx ? log10 : identity, yscale=logy ? log10 : identity)
-        band!(ax, centers, lower, means .+ deviations; color=(:steelblue, 0.22))
-        scatterlines!(ax, centers, means; color=:steelblue, linewidth=2.5)
+        band!(ax, centers, lower, means .+ deviations; color=(PLOT_BLUE, 0.16))
+        scatterlines!(ax, centers, means; color=PLOT_BLUE, linewidth=2.6,
+            markercolor=:white, strokecolor=PLOT_BLUE, strokewidth=1.5, markersize=8)
         save_figure!(files, fig, output_dir, "relation_$(sanitize(name))", formats; overwrite)
     end
 end
@@ -843,20 +846,24 @@ function plot_alignments!(files, fields, metadata, cfg, output_dir, formats, ove
             end
             push!(files, path)
         end
-        fig = Figure(size=(1050, 520))
+        fig = publication_figure(size=(1120, 560))
         angle_label = angle_coordinate == "cosine" ? latexstring("|\\cos\\phi|") :
             latexstring("\\phi\\ [^{\\circ}]")
         ax1 = latex_axis(fig[1, 1], title="HRO ($(weighting) weighting)", xlabel=angle_label,
             ylabel=field_label(condition_name, metadata[condition_name]), yscale=log10)
-        hm = heatmap!(ax1, angles, centers, permutedims(histogram); colormap=:viridis)
+        hm = heatmap!(ax1, angles, centers, permutedims(histogram); colormap=:viridis,
+            nan_color=:white)
         latex_colorbar(fig[1, 2], hm, label="normalized gradient weight")
         ax2 = latex_axis(fig[1, 3], title="Alignment parameter", xlabel=field_label(condition_name, metadata[condition_name]),
             ylabel=latexstring("\\zeta"), xscale=log10)
-        hlines!(ax2, [0.0]; color=:gray50, linestyle=:dash)
+        hlines!(ax2, [0.0]; color=PLOT_MUTED, linestyle=:dash, linewidth=1.5)
         valid = findall(isfinite, zeta)
         if !isempty(valid)
-            scatterlines!(ax2, centers[valid], zeta[valid]; color=:purple, linewidth=2.5)
-            errorbars!(ax2, centers[valid], zeta[valid], zeta_std[valid]; color=:purple)
+            scatterlines!(ax2, centers[valid], zeta[valid]; color=PLOT_PURPLE,
+                linewidth=2.6, markercolor=:white, strokecolor=PLOT_PURPLE,
+                strokewidth=1.5, markersize=8)
+            errorbars!(ax2, centers[valid], zeta[valid], zeta_std[valid];
+                color=(PLOT_PURPLE, 0.72), whiskerwidth=7, linewidth=1.3)
         end
         ylims!(ax2, -1.05, 1.05)
         latex_layout_label(fig[0, :], replace(name, '_' => ' '); fontsize=22, tellwidth=false)

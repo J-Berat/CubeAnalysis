@@ -103,7 +103,7 @@ function plot_anisotropic_spectra!(files, fields, metadata, cfg, output_dir, for
             end
             push!(files, wedge_path)
         end
-        fig = Figure(size=(850, 650)); ax = latex_axis(fig[1, 1],
+        fig = publication_figure(size=(900, 680)); ax = latex_axis(fig[1, 1],
             xlabel=latexstring("k_{\\parallel}"), ylabel=latexstring("k_{\\perp}"),
             title="$(replace(name, '_' => ' ')); b̂=$(round.(result.direction; digits=3))")
         shown = log10.(result.power)

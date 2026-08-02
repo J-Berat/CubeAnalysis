@@ -1,3 +1,23 @@
+const PLOT_INK = RGBf(31 / 255, 41 / 255, 55 / 255)
+const PLOT_MUTED = RGBf(107 / 255, 114 / 255, 128 / 255)
+const PLOT_BLUE = RGBf(35 / 255, 99 / 255, 151 / 255)
+const PLOT_ORANGE = RGBf(221 / 255, 107 / 255, 32 / 255)
+const PLOT_TEAL = RGBf(42 / 255, 133 / 255, 120 / 255)
+const PLOT_GOLD = RGBf(226 / 255, 174 / 255, 54 / 255)
+const PLOT_PURPLE = RGBf(120 / 255, 86 / 255, 148 / 255)
+const PLOT_RED = RGBf(190 / 255, 62 / 255, 62 / 255)
+const PLOT_SERIES = (PLOT_BLUE, PLOT_ORANGE, PLOT_TEAL, PLOT_PURPLE, PLOT_GOLD)
+const PLOT_LINESTYLES = (:solid, :dash, :dot, :dashdot)
+const PLOT_MARKERS = (:circle, :rect, :utriangle, :diamond, :cross)
+
+series_color(index::Integer) = PLOT_SERIES[mod1(index, length(PLOT_SERIES))]
+series_linestyle(index::Integer) = PLOT_LINESTYLES[mod1(index, length(PLOT_LINESTYLES))]
+series_marker(index::Integer) = PLOT_MARKERS[mod1(index, length(PLOT_MARKERS))]
+
+function publication_figure(; size=(900, 620), fontsize=18, kwargs...)
+    return Figure(; size, fontsize, backgroundcolor=:white, figure_padding=18, kwargs...)
+end
+
 function latex_escape_text(value)
     characters = collect(string(value))
     output = IOBuffer()
@@ -65,6 +85,34 @@ function latex_axis(parent; kwargs...)
     options[:ygridvisible] = false
     options[:xminorgridvisible] = false
     options[:yminorgridvisible] = false
+    get!(options, :backgroundcolor, :white)
+    get!(options, :leftspinecolor, PLOT_INK)
+    get!(options, :bottomspinecolor, PLOT_INK)
+    get!(options, :rightspinevisible, false)
+    get!(options, :topspinevisible, false)
+    get!(options, :spinewidth, 1.2)
+    get!(options, :xtickcolor, PLOT_INK)
+    get!(options, :ytickcolor, PLOT_INK)
+    get!(options, :xminortickcolor, PLOT_MUTED)
+    get!(options, :yminortickcolor, PLOT_MUTED)
+    get!(options, :xticklabelcolor, PLOT_INK)
+    get!(options, :yticklabelcolor, PLOT_INK)
+    get!(options, :xlabelcolor, PLOT_INK)
+    get!(options, :ylabelcolor, PLOT_INK)
+    get!(options, :xtickwidth, 1.1)
+    get!(options, :ytickwidth, 1.1)
+    get!(options, :xminortickwidth, 0.8)
+    get!(options, :yminortickwidth, 0.8)
+    get!(options, :xticksize, 7)
+    get!(options, :yticksize, 7)
+    get!(options, :xminorticksize, 4)
+    get!(options, :yminorticksize, 4)
+    get!(options, :xtickalign, 1)
+    get!(options, :ytickalign, 1)
+    get!(options, :xlabelpadding, 10)
+    get!(options, :ylabelpadding, 12)
+    get!(options, :xticklabelpad, 6)
+    get!(options, :yticklabelpad, 6)
     if xlogcoordinates || get(options, :xscale, identity) === log10
         options[:xminorticksvisible] = true
         get!(options, :xminorticks, IntervalsBetween(xlogcoordinates ? 10 : 9))
@@ -86,9 +134,30 @@ function latex_colorbar(parent, plot; kwargs...)
         options[:minorticksvisible] = true
         get!(options, :minorticks, IntervalsBetween(10))
     end
+    get!(options, :width, 16)
+    get!(options, :spinewidth, 1.0)
+    get!(options, :ticksize, 6)
+    get!(options, :tickwidth, 1.0)
+    get!(options, :tickcolor, PLOT_INK)
+    get!(options, :ticklabelcolor, PLOT_INK)
+    get!(options, :labelcolor, PLOT_INK)
+    get!(options, :ticklabelpad, 6)
+    get!(options, :labelpadding, 12)
     get!(options, :tickformat, latex_tickformat)
     return Colorbar(parent, plot; options...)
 end
 
 latex_layout_label(parent, text; kwargs...) = nothing
 latex_legend_label(text) = latex_text(text)
+
+function publication_legend!(axis; kwargs...)
+    options = Dict{Symbol,Any}(kwargs)
+    get!(options, :framevisible, false)
+    get!(options, :backgroundcolor, (:white, 0.88))
+    get!(options, :labelcolor, PLOT_INK)
+    get!(options, :labelsize, 16)
+    get!(options, :padding, (7, 7, 5, 5))
+    get!(options, :patchsize, (34, 18))
+    get!(options, :rowgap, 4)
+    return axislegend(axis; options...)
+end

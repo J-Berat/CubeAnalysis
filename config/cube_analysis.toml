@@ -18,9 +18,9 @@ box_unit = "pc"
 periodic = true
 
 [render]
-width = 1200
-height = 800
-fontsize = 16
+width = 1400
+height = 900
+fontsize = 18
 colormap = "viridis"
 quantile_low = 0.005
 quantile_high = 0.995

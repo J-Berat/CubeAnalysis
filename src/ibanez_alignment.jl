@@ -216,9 +216,9 @@ end
 
 function add_xi_background!(axis, xlimits)
     x = collect(xlimits)
-    band!(axis, x, zeros(2), ones(2); color=(RGBf(0.78, 0.88, 0.94), 1.0))
-    band!(axis, x, -ones(2), zeros(2); color=(RGBf(0.98, 0.75, 0.62), 1.0))
-    hlines!(axis, [0.0]; color=:black, linewidth=1.8)
+    band!(axis, x, zeros(2), ones(2); color=(PLOT_BLUE, 0.13))
+    band!(axis, x, -ones(2), zeros(2); color=(PLOT_ORANGE, 0.13))
+    hlines!(axis, [0.0]; color=PLOT_MUTED, linewidth=1.5, linestyle=:dash)
 end
 
 function set_xi_log_ticks!(axis, xlimits)
@@ -236,10 +236,11 @@ function plot_xi_curve!(axis, curve::HROXiCurve, xlimits)
     uncertainty_valid = filter(index -> isfinite(curve.uncertainty[index]), valid)
     !isempty(uncertainty_valid) && errorbars!(axis, curve.centers[uncertainty_valid],
         curve.xi[uncertainty_valid], curve.uncertainty[uncertainty_valid];
-        color=:black, whiskerwidth=8, linewidth=1.4)
+        color=(PLOT_INK, 0.72), whiskerwidth=8, linewidth=1.3)
     if !isempty(valid)
-        lines!(axis, curve.centers[valid], curve.xi[valid]; color=:black, linewidth=2.4)
-        scatter!(axis, curve.centers[valid], curve.xi[valid]; color=:black, markersize=9)
+        lines!(axis, curve.centers[valid], curve.xi[valid]; color=PLOT_INK, linewidth=2.7)
+        scatter!(axis, curve.centers[valid], curve.xi[valid]; color=:white,
+            strokecolor=PLOT_INK, strokewidth=1.5, markersize=9)
     end
     xlims!(axis, xlimits...); ylims!(axis, -1.0, 1.0)
     set_xi_log_ticks!(axis, xlimits)
@@ -272,7 +273,7 @@ function plot_ibanez_xi!(files, fields, metadata, cfg, spec, output_dir, formats
     xlimits = xi_plot_limits((result.gradient, result.velocity),
         (first(result.edges), last(result.edges)))
     condition_label = field_label(string(get(spec, "condition", scalar_name)), metadata[scalar_name])
-    figure = Figure(size=(1100, 420), fontsize=18)
+    figure = publication_figure(size=(1160, 480))
     gradient_axis = latex_axis(figure[1, 1]; xlabel=condition_label,
         ylabel=latexstring("\\xi_{\\nabla n,B}"), xscale=log10)
     velocity_axis = latex_axis(figure[1, 2]; xlabel=condition_label,
@@ -314,7 +315,7 @@ function plot_xi_vs_sigma_v!(files, simulation_dirs, output_dir, formats;
     xmin, xmax = extrema(sigma_values)
     xmin == xmax && (xmin *= 0.9; xmax *= 1.1)
     xlimits = (0.85xmin, 1.15xmax)
-    figure = Figure(size=(760, 540), fontsize=18)
+    figure = publication_figure()
     axis = latex_axis(figure[1, 1];
         xlabel=latexstring("\\sigma_v\\ [\\mathrm{km\\,s^{-1}}]"),
         ylabel=latexstring("\\xi"), xscale=log10)
@@ -324,18 +325,22 @@ function plot_xi_vs_sigma_v!(files, simulation_dirs, output_dir, formats;
     valid_velocity = findall(index -> isfinite(velocity_values[index]) &&
         isfinite(velocity_errors[index]), eachindex(velocity_values))
     errorbars!(axis, sigma_values[valid_gradient], gradient_values[valid_gradient],
-        gradient_errors[valid_gradient]; color=:black, whiskerwidth=8)
+        gradient_errors[valid_gradient]; color=(PLOT_INK, 0.72), whiskerwidth=8,
+        linewidth=1.3)
     scatter!(axis, sigma_values[valid_gradient], gradient_values[valid_gradient];
-        color=:black, marker=:circle, markersize=11,
+        color=:white, strokecolor=PLOT_INK, strokewidth=1.7,
+        marker=:circle, markersize=11,
         label=latexstring("\\xi_{\\nabla n,B}"))
     errorbars!(axis, sigma_values[valid_velocity], velocity_values[valid_velocity],
-        velocity_errors[valid_velocity]; color=:deepskyblue, whiskerwidth=8)
+        velocity_errors[valid_velocity]; color=(PLOT_BLUE, 0.72), whiskerwidth=8,
+        linewidth=1.3)
     scatter!(axis, sigma_values[valid_velocity], velocity_values[valid_velocity];
-        color=:deepskyblue, marker=:utriangle, markersize=12,
+        color=:white, strokecolor=PLOT_BLUE, strokewidth=1.7,
+        marker=:utriangle, markersize=12,
         label=latexstring("\\xi_{\\delta v,B}"))
     xlims!(axis, xlimits...); ylims!(axis, -1.0, 1.0)
     axis.xgridvisible = false; axis.ygridvisible = false
-    axislegend(axis; position=:rb)
+    publication_legend!(axis; position=:rb)
     save_figure!(files, figure, output_dir, "xi_vs_sigma_v", pending_formats; overwrite)
     return files
 end

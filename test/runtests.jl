@@ -18,6 +18,10 @@ end
     @test !style_axis.ygridvisible[]
     @test !style_axis.xminorgridvisible[]
     @test !style_axis.yminorgridvisible[]
+    @test !style_axis.rightspinevisible[]
+    @test !style_axis.topspinevisible[]
+    @test style_axis.xtickalign[] == 1
+    @test style_axis.ytickalign[] == 1
     @test occursin("v_x", string(CubeAnalysis.latex_text("v_x")))
     @test !occursin(raw"v\_x", string(CubeAnalysis.latex_text("v_x")))
     @test occursin(raw"\log_{10}", string(CubeAnalysis.latex_text("log10 v_x")))

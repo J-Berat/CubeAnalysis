@@ -4,6 +4,8 @@ Automated analysis of 3D FITS and HDF5 cubes with Julia.
 
 CubeAnalysis generates projections, histograms, phase diagrams, power spectra,
 structure functions, and magnetic-field alignment diagnostics.
+All figures share a publication-ready visual style with LaTeX typography,
+consistent scientific colors, quiet legends, and high-resolution exports.
 
 ## Installation
 

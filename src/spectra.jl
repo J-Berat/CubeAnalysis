@@ -178,9 +178,9 @@ function add_dissipation_region!(axis, shape, box_size, axis_order; cells=4.0,
     dissipation = dissipation_wavenumber(shape, box_size, axis_order; cells)
     left, right = logarithmic_coordinates ? log10.((dissipation, nyquist)) :
         (dissipation, nyquist)
-    vspan!(axis, left, right; color=(:gray55, 0.25),
+    vspan!(axis, left, right; color=(PLOT_MUTED, 0.16),
         label=latexstring("\\mathrm{dissipation/noise}"))
-    vlines!(axis, [left]; color=:gray25, linestyle=:dashdot, linewidth=2.0,
+    vlines!(axis, [left]; color=PLOT_MUTED, linestyle=:dashdot, linewidth=1.8,
         label=latexstring("k_{\\mathrm{diss}}"))
     return dissipation
 end
@@ -210,14 +210,13 @@ end
 
 function add_reference_slopes!(axis, k, power, slopes; k_range=nothing,
         compensation=0.0)
-    colors = (:crimson, :royalblue, :darkgreen, :purple)
     count = length(slopes)
     for (index, physical_slope) in enumerate(Float64.(slopes))
         displayed_slope = physical_slope + compensation
         offset = 0.20 * (index - (count + 1) / 2)
         x, y = reference_power_law(k, power, displayed_slope; k_range, offset)
         isempty(x) && continue
-        lines!(axis, x, y; color=colors[mod1(index, length(colors))],
+        lines!(axis, x, y; color=series_color(index + 1),
             linestyle=:dash, linewidth=2.0, label=reference_slope_label(physical_slope))
     end
     return axis
@@ -258,7 +257,7 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
         box_unit = string(get(grid, "box_unit", "L"))
         spectrum_label = transform in ("curl", "vorticity") ?
             latexstring("\\log_{10}E_{\\omega}(k)") : latexstring("\\log_{10}E(k)")
-        fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1],
+        fig = publication_figure(); ax = latex_axis(fig[1, 1],
             xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
             ylabel=spectrum_label, xlogcoordinates=true, ylogcoordinates=true,
             title=replace(name, '_' => ' '))
@@ -267,17 +266,20 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
         add_dissipation_region!(ax, analysis_field_size(fields, first(components)),
             box_size, axis_order; cells=dissipation_cells)
         logk, logtotal = log_spectrum_coordinates(result.k, result.total)
-        lines!(ax, logk, logtotal; label=latex_legend_label("total"), linewidth=2.5)
+        lines!(ax, logk, logtotal; label=latex_legend_label("total"), linewidth=2.8,
+            color=PLOT_INK)
         if transform == "none"
             logk, logsolenoidal = log_spectrum_coordinates(result.k, result.solenoidal)
-            lines!(ax, logk, logsolenoidal; label=latex_legend_label("solenoidal"), linewidth=2)
+            lines!(ax, logk, logsolenoidal; label=latex_legend_label("solenoidal"),
+                linewidth=2.4, color=PLOT_BLUE)
             logk, logcompressive = log_spectrum_coordinates(result.k, result.compressive)
-            lines!(ax, logk, logcompressive; label=latex_legend_label("compressive"), linewidth=2)
+            lines!(ax, logk, logcompressive; label=latex_legend_label("compressive"),
+                linewidth=2.4, color=PLOT_ORANGE, linestyle=:dash)
         end
         slopes = get(spec, "reference_slopes", Float64[])
         add_reference_slopes!(ax, result.k, result.total, slopes;
             k_range=get(spec, "reference_range", nothing))
-        axislegend(ax)
+        publication_legend!(ax)
         save_figure!(files, fig, output_dir, "vector_spectrum_$(sanitize(name))", formats; overwrite)
     end
 end
@@ -341,15 +343,16 @@ function plot_cross_spectra!(files, fields, cfg, output_dir, formats, overwrite)
             end
             push!(files, path)
         end
-        fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1], xscale=log10,
+        fig = publication_figure(); ax = latex_axis(fig[1, 1], xscale=log10,
             xlabel=latexstring("k\\ [\\mathrm{physical}]"),
             ylabel=latexstring("\\mathcal{C}(k)"), title=replace(name, '_' => ' '))
         dissipation_cells = Float64(get(spec, "dissipation_cells",
             get(get(cfg, "spectra", Dict()), "dissipation_cells", 4.0)))
         add_dissipation_region!(ax, analysis_field_size(fields, first), box_size,
             axis_order; cells=dissipation_cells, logarithmic_coordinates=false)
-        lines!(ax, result.k, result.coherence; linewidth=2.5); ylims!(ax, 0, 1.05)
-        axislegend(ax)
+        lines!(ax, result.k, result.coherence; linewidth=2.8, color=PLOT_BLUE)
+        ylims!(ax, 0, 1.05)
+        publication_legend!(ax)
         save_figure!(files, fig, output_dir, "cross_spectrum_$(sanitize(name))", formats; overwrite)
     end
 end
@@ -401,7 +404,7 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
             end
             push!(files, fit_path)
         end
-        fig = Figure(size=(760, 520))
+        fig = publication_figure()
         ylabel = compensation == 0 ? latexstring("\\log_{10}P(k)") :
             latexstring("\\log_{10}[k^{", compensation, "}P(k)]")
         box_unit = string(get(get(cfg, "grid", Dict()), "box_unit", "L"))
@@ -412,14 +415,15 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
         add_dissipation_region!(ax, size(fields[name]), box_size, axis_order;
             cells=dissipation_cells)
         logk, logpower = log_spectrum_coordinates(result.k, compensated)
-        lines!(ax, logk, logpower; color=:darkorange, linewidth=2.5)
-        scatter!(ax, logk, logpower; color=:darkorange, markersize=6)
+        lines!(ax, logk, logpower; color=PLOT_BLUE, linewidth=2.7)
+        scatter!(ax, logk, logpower; color=:white, strokecolor=PLOT_BLUE,
+            strokewidth=1.2, markersize=6)
         if name in string.(get(settings, "velocity_fields", ["Vmag"]))
             slopes = get(settings, "velocity_reference_slopes", [-5 / 3, -2.0])
             add_reference_slopes!(ax, result.k, compensated, slopes;
                 k_range=get(settings, "reference_range", fit_range), compensation)
         end
-        axislegend(ax)
+        publication_legend!(ax)
         save_figure!(files, fig, output_dir, "spectrum_$(sanitize(name))", formats; overwrite)
     end
 end
