@@ -5,7 +5,7 @@ end
 function structure_functions(cube; orders=1:3, lags=nothing, samples_per_lag=100_000,
         seed=1234, periodic=true)
     selected_lags = isnothing(lags) ? unique!(round.(Int,
-        10 .^ range(0, log10(max(1, minimum(size(cube)) ÷ 4)); length=16))) : Int.(lags)
+        10 .^ range(0, log10(max(1, minimum(size(cube)) ÷ 2)); length=18))) : Int.(lags)
     all(>(0), selected_lags) || error("Structure-function lags must be positive")
     selected_orders = Int.(orders)
     rng = MersenneTwister(seed)
@@ -37,6 +37,56 @@ function structure_functions(cube; orders=1:3, lags=nothing, samples_per_lag=100
         counts[li] > 0 && (values[li, :] .= sums ./ counts[li])
     end
     return selected_lags, selected_orders, values, counts
+end
+
+function structure_plot_scales(cube, lags, box_size, axis_order;
+        injection_modes=4.0, dissipation_cells=4.0, box_unit="L")
+    spacings = collect(grid_spacings(cube, box_size; axis_order))
+    isotropic = maximum(spacings) / minimum(spacings) <= 1 + 1e-8
+    if isotropic
+        separation = Float64.(lags) .* mean(spacings)
+        injection_scale = 2π / injection_wavenumber(box_size, axis_order;
+            modes=injection_modes)
+        dissipation_scale = 2π / dissipation_wavenumber(size(cube), box_size,
+            axis_order; cells=dissipation_cells)
+        label = latexstring("\\ell\\ [\\mathrm{", box_unit, "]}")
+    else
+        separation = Float64.(lags)
+        injection_scale = minimum(size(cube)) / Float64(injection_modes)
+        dissipation_scale = Float64(dissipation_cells)
+        label = latexstring("\\ell\\ [\\mathrm{cells}]")
+    end
+    return separation, dissipation_scale, injection_scale, label
+end
+
+function add_structure_ranges!(axis, separation, dissipation_scale, injection_scale)
+    xmin, xmax = extrema(separation)
+    if xmin < dissipation_scale
+        vspan!(axis, xmin, min(dissipation_scale, xmax); color=(PLOT_MUTED, 0.16))
+    end
+    if injection_scale < xmax
+        vspan!(axis, max(injection_scale, xmin), xmax; color=(PLOT_GOLD, 0.18))
+    end
+    xmin <= dissipation_scale <= xmax && vlines!(axis, [dissipation_scale];
+        color=PLOT_MUTED, linestyle=:dashdot, linewidth=1.8)
+    xmin <= injection_scale <= xmax && vlines!(axis, [injection_scale];
+        color=PLOT_ORANGE, linestyle=:dashdot, linewidth=1.8)
+    return axis
+end
+
+function add_structure_fit!(axis, separation, values, order, fit_range)
+    slope, slope_std, points = spectral_fit(separation, values, fit_range)
+    isfinite(slope) || return (slope, slope_std, points)
+    selected = findall(index -> fit_range[1] <= separation[index] <= fit_range[2] &&
+        isfinite(values[index]) && values[index] > 0, eachindex(separation))
+    anchor = selected[cld(length(selected), 2)]
+    x = Float64.(separation[selected])
+    y = Float64(values[anchor]) .* (x ./ separation[anchor]) .^ slope
+    uncertainty = isfinite(slope_std) ? @sprintf("%.2f", slope_std) : "\\mathrm{nan}"
+    lines!(axis, x, y; color=PLOT_INK, linestyle=:dashdot, linewidth=2.2,
+        label=latexstring("\\zeta_{", order, "}=", @sprintf("%.2f", slope),
+            "\\pm", uncertainty))
+    return slope, slope_std, points
 end
 
 function radial_autocorrelation(cube; bins=60, box_size=1.0, axis_order=("x", "y", "z"))
@@ -107,27 +157,65 @@ function physics_diagnostics(fields, spec; stride=1)
     return Dict("mach_sonic" => mach_sonic, "mach_alfven" => mach_alfven, "plasma_beta" => beta)
 end
 
-function write_advanced_diagnostics!(files, fields, metadata, cfg, output_dir, overwrite)
+function plot_advanced_diagnostics!(files, fields, metadata, cfg, output_dir, formats, overwrite)
     settings = get(cfg, "diagnostics", Dict())
     periodic = Bool(get(get(cfg, "grid", Dict()), "periodic", true))
     grid = get(cfg, "grid", Dict())
     box_size = get(grid, "box_size", 1.0)
     axis_order = string.(get(grid, "axis_order", ["x", "y", "z"]))
+    box_unit = string(get(grid, "box_unit", "L"))
+    spectra = get(cfg, "spectra", Dict())
+    injection_modes = Float64(get(settings, "structure_injection_modes",
+        get(spectra, "injection_modes", 4.0)))
+    dissipation_cells = Float64(get(settings, "structure_dissipation_cells",
+        get(spectra, "dissipation_cells", 4.0)))
     for name in string.(get(settings, "structure_fields", String[]))
         haskey(fields, name) || error("Structure function references missing field '$name'")
+        cube = fields[name]
         lags, orders, values, counts = structure_functions(fields[name];
             orders=Int.(get(settings, "structure_orders", [1, 2, 3])),
             samples_per_lag=Int(get(settings, "structure_samples", 100_000)),
             seed=Int(get(settings, "seed", 1234)), periodic)
-        path = joinpath(output_dir, "structure_$(sanitize(name)).csv")
-        write_text_output(path; overwrite) do io
-            println(io, join(["lag_cells", "samples", ["S$order" for order in orders]...], ','))
-            for i in eachindex(lags)
-                println(io, join([lags[i], counts[i], values[i, :]...], ','))
+        separation, dissipation_scale, injection_scale, separation_label =
+            structure_plot_scales(cube, lags, box_size, axis_order;
+                injection_modes, dissipation_cells, box_unit)
+        fit_range = [dissipation_scale, injection_scale]
+        if save_data(cfg)
+            path = joinpath(output_dir, "structure_$(sanitize(name)).csv")
+            write_text_output(path; overwrite) do io
+                println(io, join(["lag_cells", "separation", "samples",
+                    ["S$order" for order in orders]...], ','))
+                for i in eachindex(lags)
+                    println(io, join([lags[i], separation[i], counts[i], values[i, :]...], ','))
+                end
+            end
+            push!(files, path)
+        end
+        panel_width = 410
+        fig = publication_figure(size=(max(900, panel_width * length(orders)), 520))
+        for (column, order) in enumerate(orders)
+            axis = latex_axis(fig[1, column]; xscale=log10, yscale=log10,
+                xlabel=separation_label,
+                ylabel=latexstring("S_{", order, "}(\\ell)"))
+            add_structure_ranges!(axis, separation, dissipation_scale, injection_scale)
+            valid = findall(index -> isfinite(values[index, column]) &&
+                values[index, column] > 0, eachindex(separation))
+            if !isempty(valid)
+                color = series_color(column)
+                lines!(axis, separation[valid], values[valid, column]; color, linewidth=2.7)
+                scatter!(axis, separation[valid], values[valid, column]; color=:white,
+                    strokecolor=color, strokewidth=1.3, markersize=7,
+                    marker=series_marker(column))
+                slope, _, _ = add_structure_fit!(axis, separation, values[:, column],
+                    order, fit_range)
+                isfinite(slope) && publication_legend!(axis; position=:lt)
             end
         end
-        push!(files, path)
+        colgap!(fig.layout, 34)
+        save_figure!(files, fig, output_dir, "structure_$(sanitize(name))", formats;
+            overwrite)
     end
+    save_data(cfg) || return files
     for name in string.(get(settings, "correlation_fields", String[]))
         haskey(fields, name) || error("Correlation references missing field '$name'")
         radius, correlation, modes, length_scale = radial_autocorrelation(fields[name];
@@ -162,4 +250,5 @@ function write_advanced_diagnostics!(files, fields, metadata, cfg, output_dir, o
         end
         push!(files, path)
     end
+    return files
 end

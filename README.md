@@ -79,7 +79,8 @@ julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 - separated injection, inertial, and numerical-dissipation ranges;
 - spectral fits and Kolmogorov/Burgers references restricted to the inertial range;
 - HRO and alignment parameters;
-- structure functions, autocorrelations, and physical diagnostics.
+- first-, second-, and third-order structure-function figures with inertial-range fits;
+- autocorrelations and physical diagnostics.
 
 Figures have no titles or grid lines. Text, ticks, legends, and colorbar labels
 use LaTeX. Only figures are saved by default.

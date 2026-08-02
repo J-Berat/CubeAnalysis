@@ -946,9 +946,9 @@ function run_analysis_config(cfg::AbstractDict)
             output_dir, formats, overwrite)))
     requested(cfg, "alignments") && push!(stages,
         ("alignments", () -> plot_alignments!(files, fields, metadata, cfg, output_dir, formats, overwrite)))
-    save_data(cfg) && requested(cfg, "advanced_diagnostics") && push!(stages,
-        ("advanced_diagnostics", () -> write_advanced_diagnostics!(files, fields, metadata,
-            cfg, output_dir, overwrite)))
+    requested(cfg, "advanced_diagnostics") && push!(stages,
+        ("advanced_diagnostics", () -> plot_advanced_diagnostics!(files, fields, metadata,
+            cfg, output_dir, formats, overwrite)))
     requested(cfg, "topology") && push!(stages,
         ("topology", () -> plot_topology!(files, fields, metadata, cfg,
             output_dir, formats, overwrite)))

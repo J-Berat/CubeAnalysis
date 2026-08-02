@@ -172,6 +172,15 @@ end
             lags=[1, 2], orders=[1, 2, 3], samples_per_lag=2_000, seed=8)
         @test size(structure) == (2, 3)
         @test all(samples .> 0)
+        isotropic_structure_cube = zeros(Float32, 32, 32, 32)
+        separation, structure_dissipation, structure_injection, separation_label =
+            CubeAnalysis.structure_plot_scales(isotropic_structure_cube, [1, 2, 4],
+                (2π, 2π, 2π), ("x", "y", "z"); injection_modes=4.0,
+                dissipation_cells=4.0, box_unit="pc")
+        @test separation ≈ [2π / 32, 4π / 32, 8π / 32]
+        @test structure_dissipation ≈ 8π / 32
+        @test structure_injection ≈ π / 2
+        @test occursin("pc", string(separation_label))
         radius, correlation, _, _ = CubeAnalysis.radial_autocorrelation(sinusoid;
             bins=12, box_size=(2π, 2π, 2π))
         @test !isempty(radius)

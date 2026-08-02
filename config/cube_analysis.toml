@@ -132,6 +132,7 @@ bins = 80
 structure_fields = ["density", "Vmag"]
 structure_orders = [1, 2, 3]
 structure_samples = 100000
+# Fits inherit spectra.injection_modes and spectra.dissipation_cells.
 correlation_fields = ["density", "Bmag"]
 correlation_bins = 60
 physics = true
