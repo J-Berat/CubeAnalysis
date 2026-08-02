@@ -75,6 +75,7 @@ fields = ["density", "temperature", "Bmag", "Vmag"]
 quantity = "shell" # "shell" energy or per-mode "average"
 compensation = 0.0
 fit_range = [0.2, 10.0]
+injection_modes = 4.0 # injection-dominated modes k/k_min <= 4
 dissipation_cells = 4.0 # shade wavelengths resolved by fewer than four cells
 # For non-periodic grids the default is "hann"; otherwise "none".
 window = "none"

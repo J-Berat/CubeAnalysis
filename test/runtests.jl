@@ -142,7 +142,18 @@ end
         @test vorticity_spectrum.compressive[vorticity_peak] ≤
             1e-6 * vorticity_spectrum.total[vorticity_peak]
         @test CubeAnalysis.nyquist_wavenumber(shape, lengths) ≈ 6.0
+        @test CubeAnalysis.fundamental_wavenumber(lengths) ≈ 0.5
+        @test CubeAnalysis.injection_wavenumber(lengths; modes=4.0) ≈ 2.0
         @test CubeAnalysis.dissipation_wavenumber(shape, lengths; cells=4.0) ≈ 3.0
+        @test CubeAnalysis.inertial_fit_range([1.0, 5.0], shape, lengths,
+            ("x", "y", "z"); injection_modes=4.0, dissipation_cells=4.0) ≈ [2.0, 3.0]
+        fit_k = [1.0, 2.0, 2.5, 3.0, 4.0]
+        fit_power = [1.0e8, 2.0^-2, 2.5^-2, 3.0^-2, 1.0e8]
+        inertial_slope, _, inertial_points = CubeAnalysis.spectral_fit(
+            fit_k, fit_power, [2.0, 3.0])
+        @test inertial_slope ≈ -2.0
+        @test inertial_points == 3
+        @test_throws ErrorException CubeAnalysis.injection_wavenumber(lengths; modes=0.5)
         @test_throws ErrorException CubeAnalysis.dissipation_wavenumber(shape, lengths;
             cells=1.5)
         reference_x, reference_y = CubeAnalysis.reference_power_law(

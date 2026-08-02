@@ -96,6 +96,20 @@ function spectral_fit(k, power, fit_range)
     return slope, stderr, length(selected)
 end
 
+function add_spectral_fit!(axis, k, displayed_power, slope, slope_std, fit_range;
+        compensation=0.0)
+    isfinite(slope) || return axis
+    x, y = reference_power_law(k, displayed_power, slope + compensation;
+        k_range=fit_range)
+    isempty(x) && return axis
+    uncertainty = isfinite(slope_std) ? @sprintf("%.2f", slope_std) : "\\mathrm{nan}"
+    label = latexstring("\\alpha=", @sprintf("%.2f", slope),
+        "\\pm", uncertainty)
+    lines!(axis, x, y; color=PLOT_INK, linestyle=:dashdot, linewidth=2.2,
+        label)
+    return axis
+end
+
 function vector_spectrum_details(vx, vy, vz; bins=80, box_size=(2π, 2π, 2π),
         axis_order=("x", "y", "z"), remove_mean=true, weight=nothing,
         weight_power=0.5, transform="none")
@@ -165,6 +179,19 @@ function nyquist_wavenumber(shape, box_size=(2π, 2π, 2π),
     return minimum(π .* collect(shape) ./ collect(lengths))
 end
 
+function fundamental_wavenumber(box_size=(2π, 2π, 2π),
+        axis_order=("x", "y", "z"))
+    lengths = box_lengths(box_size, axis_order)
+    return minimum(2π ./ collect(lengths))
+end
+
+function injection_wavenumber(box_size=(2π, 2π, 2π),
+        axis_order=("x", "y", "z"); modes=4.0)
+    modes = Float64(modes)
+    modes >= 1 || error("spectra.injection_modes must be at least 1")
+    return modes * fundamental_wavenumber(box_size, axis_order)
+end
+
 function dissipation_wavenumber(shape, box_size=(2π, 2π, 2π),
         axis_order=("x", "y", "z"); cells=4.0)
     cells = Float64(cells)
@@ -183,6 +210,41 @@ function add_dissipation_region!(axis, shape, box_size, axis_order; cells=4.0,
     vlines!(axis, [left]; color=PLOT_MUTED, linestyle=:dashdot, linewidth=1.8,
         label=latexstring("k_{\\mathrm{diss}}"))
     return dissipation
+end
+
+
+function add_injection_region!(axis, shape, box_size, axis_order; modes=4.0,
+        logarithmic_coordinates=true)
+    fundamental = fundamental_wavenumber(box_size, axis_order)
+    injection = injection_wavenumber(box_size, axis_order; modes)
+    upper = min(injection, nyquist_wavenumber(shape, box_size, axis_order))
+    left, right = logarithmic_coordinates ? log10.((fundamental, upper)) :
+        (fundamental, upper)
+    right > left && vspan!(axis, left, right; color=(PLOT_GOLD, 0.18),
+        label=latexstring("\\mathrm{energy\\ injection}"))
+    position = logarithmic_coordinates ? log10(injection) : injection
+    vlines!(axis, [position]; color=PLOT_ORANGE, linestyle=:dashdot, linewidth=1.8,
+        label=latexstring("k_{\\mathrm{inj}}"))
+    return injection
+end
+
+function add_spectral_ranges!(axis, shape, box_size, axis_order; injection_modes=4.0,
+        dissipation_cells=4.0, logarithmic_coordinates=true)
+    injection = add_injection_region!(axis, shape, box_size, axis_order;
+        modes=injection_modes, logarithmic_coordinates)
+    dissipation = add_dissipation_region!(axis, shape, box_size, axis_order;
+        cells=dissipation_cells, logarithmic_coordinates)
+    return (injection, dissipation)
+end
+
+function inertial_fit_range(requested, shape, box_size, axis_order;
+        injection_modes=4.0, dissipation_cells=4.0)
+    injection = injection_wavenumber(box_size, axis_order; modes=injection_modes)
+    dissipation = dissipation_wavenumber(shape, box_size, axis_order;
+        cells=dissipation_cells)
+    limits = isnothing(requested) ? (-Inf, Inf) : Tuple(Float64.(requested))
+    length(limits) == 2 || error("A spectral fit range needs two values")
+    return [max(limits[1], injection), min(limits[2], dissipation)]
 end
 
 function reference_power_law(k, power, slope; k_range=nothing, offset=0.0)
@@ -263,8 +325,11 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
             title=replace(name, '_' => ' '))
         dissipation_cells = Float64(get(spec, "dissipation_cells",
             get(get(cfg, "spectra", Dict()), "dissipation_cells", 4.0)))
-        add_dissipation_region!(ax, analysis_field_size(fields, first(components)),
-            box_size, axis_order; cells=dissipation_cells)
+        injection_modes = Float64(get(spec, "injection_modes",
+            get(get(cfg, "spectra", Dict()), "injection_modes", 4.0)))
+        shape = analysis_field_size(fields, first(components))
+        add_spectral_ranges!(ax, shape, box_size, axis_order;
+            injection_modes, dissipation_cells)
         logk, logtotal = log_spectrum_coordinates(result.k, result.total)
         lines!(ax, logk, logtotal; label=latex_legend_label("total"), linewidth=2.8,
             color=PLOT_INK)
@@ -277,8 +342,10 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
                 linewidth=2.4, color=PLOT_ORANGE, linestyle=:dash)
         end
         slopes = get(spec, "reference_slopes", Float64[])
+        reference_range = inertial_fit_range(get(spec, "reference_range", nothing),
+            shape, box_size, axis_order; injection_modes, dissipation_cells)
         add_reference_slopes!(ax, result.k, result.total, slopes;
-            k_range=get(spec, "reference_range", nothing))
+            k_range=reference_range)
         publication_legend!(ax)
         save_figure!(files, fig, output_dir, "vector_spectrum_$(sanitize(name))", formats; overwrite)
     end
@@ -348,8 +415,11 @@ function plot_cross_spectra!(files, fields, cfg, output_dir, formats, overwrite)
             ylabel=latexstring("\\mathcal{C}(k)"), title=replace(name, '_' => ' '))
         dissipation_cells = Float64(get(spec, "dissipation_cells",
             get(get(cfg, "spectra", Dict()), "dissipation_cells", 4.0)))
-        add_dissipation_region!(ax, analysis_field_size(fields, first), box_size,
-            axis_order; cells=dissipation_cells, logarithmic_coordinates=false)
+        injection_modes = Float64(get(spec, "injection_modes",
+            get(get(cfg, "spectra", Dict()), "injection_modes", 4.0)))
+        add_spectral_ranges!(ax, analysis_field_size(fields, first), box_size,
+            axis_order; injection_modes, dissipation_cells,
+            logarithmic_coordinates=false)
         lines!(ax, result.k, result.coherence; linewidth=2.8, color=PLOT_BLUE)
         ylims!(ax, 0, 1.05)
         publication_legend!(ax)
@@ -383,8 +453,10 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
         workspace = result.workspace
         power = quantity == "average" ? result.average : result.shell
         compensated = power .* result.k .^ compensation
-        fit_range = Float64.(get(settings, "fit_range", [minimum(result.k), maximum(result.k)]))
-        length(fit_range) == 2 || error("spectra.fit_range needs two values")
+        dissipation_cells = Float64(get(settings, "dissipation_cells", 4.0))
+        injection_modes = Float64(get(settings, "injection_modes", 4.0))
+        fit_range = inertial_fit_range(get(settings, "fit_range", nothing),
+            size(fields[name]), box_size, axis_order; injection_modes, dissipation_cells)
         slope, slope_std, fit_modes = spectral_fit(result.k, power, fit_range)
         if save_data(cfg)
             path = joinpath(output_dir, "spectrum_$(sanitize(name)).csv")
@@ -411,17 +483,21 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
         ax = latex_axis(fig[1, 1], title="3-D isotropic spectrum - $(metadata[name].label)",
             xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
             ylabel=ylabel, xlogcoordinates=true, ylogcoordinates=true)
-        dissipation_cells = Float64(get(settings, "dissipation_cells", 4.0))
-        add_dissipation_region!(ax, size(fields[name]), box_size, axis_order;
-            cells=dissipation_cells)
+        add_spectral_ranges!(ax, size(fields[name]), box_size, axis_order;
+            injection_modes, dissipation_cells)
         logk, logpower = log_spectrum_coordinates(result.k, compensated)
         lines!(ax, logk, logpower; color=PLOT_BLUE, linewidth=2.7)
         scatter!(ax, logk, logpower; color=:white, strokecolor=PLOT_BLUE,
             strokewidth=1.2, markersize=6)
+        add_spectral_fit!(ax, result.k, compensated, slope, slope_std, fit_range;
+            compensation)
         if name in string.(get(settings, "velocity_fields", ["Vmag"]))
             slopes = get(settings, "velocity_reference_slopes", [-5 / 3, -2.0])
+            reference_range = inertial_fit_range(
+                get(settings, "reference_range", fit_range), size(fields[name]),
+                box_size, axis_order; injection_modes, dissipation_cells)
             add_reference_slopes!(ax, result.k, compensated, slopes;
-                k_range=get(settings, "reference_range", fit_range), compensation)
+                k_range=reference_range, compensation)
         end
         publication_legend!(ax)
         save_figure!(files, fig, output_dir, "spectrum_$(sanitize(name))", formats; overwrite)
