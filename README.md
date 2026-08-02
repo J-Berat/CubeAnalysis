@@ -80,7 +80,12 @@ julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 - spectral fits and Kolmogorov/Burgers references restricted to the inertial range;
 - HRO and alignment parameters;
 - first-, second-, and third-order structure-function figures with inertial-range fits;
+- phase-conditioned velocity ESS exponents compared with turbulence models;
 - autocorrelations and physical diagnostics.
+
+The ESS comparison uses the classical Kolmogorov scaling, the intermittent
+[She--Leveque model](https://doi.org/10.1103/PhysRevLett.72.336), and the
+supersonic [Boldyrev model](https://doi.org/10.1086/340758).
 
 Figures have no titles or grid lines. Text, ticks, legends, and colorbar labels
 use LaTeX. Only figures are saved by default.

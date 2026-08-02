@@ -133,6 +133,11 @@ structure_fields = ["density", "Vmag"]
 structure_orders = [1, 2, 3]
 structure_samples = 100000
 # Fits inherit spectra.injection_modes and spectra.dissipation_cells.
+phase_ess = true
+phase_ess_orders = [1, 2, 3, 4, 5]
+phase_ess_samples = 100000
+phase_ess_temperature = "temperature"
+phase_ess_velocity = ["Vx", "Vy", "Vz"]
 correlation_fields = ["density", "Bmag"]
 correlation_bins = 60
 physics = true
@@ -143,6 +148,21 @@ magnetic = ["Bx", "By", "Bz"]
 mean_molecular_weight = 1.27
 velocity_to_cms = 1.0e5
 magnetic_to_gauss = 1.0e-3
+
+[[diagnostics.phases]]
+name = "CNM"
+temperature_min = 0.0
+temperature_max = 300.0
+
+[[diagnostics.phases]]
+name = "UNM"
+temperature_min = 300.0
+temperature_max = 5000.0
+
+[[diagnostics.phases]]
+name = "WNM"
+temperature_min = 5000.0
+temperature_max = 1.0e30
 
 # Each field points to one 3-D FITS cube.
 [fields.density]

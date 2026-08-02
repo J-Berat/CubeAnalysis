@@ -181,6 +181,17 @@ end
         @test structure_dissipation ≈ 8π / 32
         @test structure_injection ≈ π / 2
         @test occursin("pc", string(separation_label))
+        @test CubeAnalysis.kolmogorov_ess(3) ≈ 1.0
+        @test CubeAnalysis.she_leveque_ess(3) ≈ 1.0
+        @test CubeAnalysis.boldyrev_ess(3) ≈ 1.0
+        phase_lags, phase_orders, phase_structure, phase_counts =
+            CubeAnalysis.phase_velocity_structure(sinusoid, zero_field, zero_field,
+                fill(8000.0f0, size(sinusoid)), CubeAnalysis.default_thermal_phases();
+                lags=[1, 2], orders=[1, 2, 3], samples_per_lag=2_000, seed=9)
+        @test phase_lags == [1, 2]
+        @test phase_orders == [1, 2, 3]
+        @test size(phase_structure) == (2, 3, 3)
+        @test all(phase_counts[:, 3] .> 0)
         radius, correlation, _, _ = CubeAnalysis.radial_autocorrelation(sinusoid;
             bins=12, box_size=(2π, 2π, 2π))
         @test !isempty(radius)

@@ -89,6 +89,165 @@ function add_structure_fit!(axis, separation, values, order, fit_range)
     return slope, slope_std, points
 end
 
+kolmogorov_ess(order::Real) = Float64(order) / 3
+she_leveque_ess(order::Real) = Float64(order) / 9 +
+    2 * (1 - (2 / 3)^(Float64(order) / 3))
+boldyrev_ess(order::Real) = Float64(order) / 9 +
+    1 - (1 / 3)^(Float64(order) / 3)
+
+function default_thermal_phases()
+    return [
+        (name="CNM", minimum=0.0, maximum=300.0),
+        (name="UNM", minimum=300.0, maximum=5000.0),
+        (name="WNM", minimum=5000.0, maximum=Inf),
+    ]
+end
+
+function configured_thermal_phases(settings)
+    raw = get(settings, "phases", nothing)
+    isnothing(raw) && return default_thermal_phases()
+    return [(name=string(phase["name"]),
+        minimum=Float64(get(phase, "temperature_min", 0.0)),
+        maximum=Float64(get(phase, "temperature_max", Inf))) for phase in raw]
+end
+
+function phase_velocity_structure(vx, vy, vz, temperature, phases; orders=1:5,
+        lags=nothing, samples_per_lag=100_000, seed=1234, periodic=true)
+    shape = size(vx)
+    all(size(field) == shape for field in (vy, vz, temperature)) ||
+        error("Phase ESS fields must have identical sizes")
+    selected_lags = isnothing(lags) ? unique!(round.(Int,
+        10 .^ range(0, log10(max(1, minimum(shape) ÷ 2)); length=18))) : Int.(lags)
+    selected_orders = Int.(orders)
+    sums = zeros(Float64, length(selected_lags), length(phases), length(selected_orders))
+    counts = zeros(Int, length(selected_lags), length(phases))
+    rng = MersenneTwister(seed)
+    for (lag_index, lag) in enumerate(selected_lags), _ in 1:samples_per_lag
+        axis = rand(rng, 1:3); direction = rand(rng, Bool) ? lag : -lag
+        i=rand(rng, axes(vx, 1)); j=rand(rng, axes(vx, 2)); k=rand(rng, axes(vx, 3))
+        ti, tj, tk = i, j, k
+        shifted = (i, j, k)[axis] + direction
+        if periodic
+            shifted = mod1(shifted, shape[axis])
+        elseif !(1 <= shifted <= shape[axis])
+            continue
+        end
+        axis == 1 ? (ti=shifted) : axis == 2 ? (tj=shifted) : (tk=shifted)
+        first_temperature = Float64(temperature[i,j,k])
+        second_temperature = Float64(temperature[ti,tj,tk])
+        isfinite(first_temperature) && isfinite(second_temperature) || continue
+        phase_index = findfirst(phase -> phase.minimum <= first_temperature < phase.maximum &&
+            phase.minimum <= second_temperature < phase.maximum, phases)
+        isnothing(phase_index) && continue
+        du2 = 0.0
+        for component in (vx, vy, vz)
+            first_value = Float64(component[i,j,k]); second_value = Float64(component[ti,tj,tk])
+            isfinite(first_value) && isfinite(second_value) || (du2 = NaN; break)
+            du2 += (second_value - first_value)^2
+        end
+        isfinite(du2) || continue
+        increment = sqrt(du2)
+        for (order_index, order) in enumerate(selected_orders)
+            sums[lag_index, phase_index, order_index] += increment^order
+        end
+        counts[lag_index, phase_index] += 1
+    end
+    values = fill(NaN, size(sums))
+    for lag_index in eachindex(selected_lags), phase_index in eachindex(phases)
+        count = counts[lag_index, phase_index]
+        count > 0 && (values[lag_index, phase_index, :] .=
+            sums[lag_index, phase_index, :] ./ count)
+    end
+    return selected_lags, selected_orders, values, counts
+end
+
+function ess_exponents(structure, orders, selected_lags, lag_range; minimum_samples=nothing)
+    third = findfirst(==(3), orders)
+    isnothing(third) && error("ESS requires third-order structure functions")
+    exponents = fill(NaN, length(orders)); uncertainties = similar(exponents)
+    points = zeros(Int, length(orders))
+    for (order_index, _) in enumerate(orders)
+        valid = findall(index -> lag_range[1] <= selected_lags[index] <= lag_range[2] &&
+            isfinite(structure[index, third]) && structure[index, third] > 0 &&
+            isfinite(structure[index, order_index]) && structure[index, order_index] > 0,
+            eachindex(selected_lags))
+        if !isnothing(minimum_samples)
+            valid = filter(index -> minimum_samples[index] > 0, valid)
+        end
+        points[order_index] = length(valid)
+        length(valid) >= 3 || continue
+        x = log10.(structure[valid, third]); y = log10.(structure[valid, order_index])
+        xmean=mean(x); ymean=mean(y); denominator=sum(abs2, x .- xmean)
+        denominator > 0 || continue
+        slope=sum((x .- xmean) .* (y .- ymean)) / denominator
+        residual=y .- (ymean - slope*xmean .+ slope .* x)
+        exponents[order_index]=slope
+        uncertainties[order_index]=sqrt(sum(abs2, residual) /
+            (length(valid)-2) / denominator)
+    end
+    return exponents, uncertainties, points
+end
+
+function plot_phase_ess!(files, fields, cfg, settings, output_dir, formats, overwrite,
+        injection_modes, dissipation_cells)
+    Bool(get(settings, "phase_ess", true)) || return files
+    velocity_names = string.(get(settings, "phase_ess_velocity", ["Vx", "Vy", "Vz"]))
+    temperature_name = string(get(settings, "phase_ess_temperature", "temperature"))
+    all(haskey(fields, name) for name in [velocity_names; temperature_name]) ||
+        error("Phase ESS references missing velocity or temperature fields")
+    phases = configured_thermal_phases(settings)
+    cube = fields[first(velocity_names)]
+    enforce_working_set(cfg, 4 * sizeof(Float32) * length(cube);
+        context="phase-conditioned ESS")
+    lags, orders, values, counts = phase_velocity_structure(
+        (fields[name] for name in velocity_names)..., fields[temperature_name], phases;
+        orders=Int.(get(settings, "phase_ess_orders", [1, 2, 3, 4, 5])),
+        samples_per_lag=Int(get(settings, "phase_ess_samples", 100_000)),
+        seed=Int(get(settings, "seed", 1234)),
+        periodic=Bool(get(get(cfg, "grid", Dict()), "periodic", true)))
+    lag_range = [dissipation_cells, minimum(size(cube)) / injection_modes]
+    fig = publication_figure(size=(900, 620)); axis = latex_axis(fig[1, 1],
+        xlabel=latexstring("p"), ylabel=latexstring("\\zeta_p/\\zeta_3\\ (\\mathrm{ESS})"))
+    phase_results = []
+    for (phase_index, phase) in enumerate(phases)
+        exponents, errors, points = ess_exponents(values[:, phase_index, :], orders,
+            lags, lag_range; minimum_samples=counts[:, phase_index])
+        valid = findall(isfinite, exponents)
+        isempty(valid) && continue
+        color=series_color(phase_index)
+        lines!(axis, orders[valid], exponents[valid]; color, linewidth=2.7,
+            label=latex_legend_label(phase.name))
+        scatter!(axis, orders[valid], exponents[valid]; color=:white,
+            strokecolor=color, strokewidth=1.5, markersize=10,
+            marker=series_marker(phase_index))
+        errorbars!(axis, orders[valid], exponents[valid], errors[valid];
+            color=(color, 0.72), whiskerwidth=7, linewidth=1.2)
+        push!(phase_results, (phase, exponents, errors, points))
+    end
+    order_values = Float64.(orders)
+    lines!(axis, order_values, kolmogorov_ess.(order_values); color=PLOT_INK,
+        linestyle=:dash, linewidth=2.0, label=latex_legend_label("Kolmogorov"))
+    lines!(axis, order_values, she_leveque_ess.(order_values); color=PLOT_MUTED,
+        linestyle=:dot, linewidth=2.2, label=latex_legend_label("She-Leveque"))
+    lines!(axis, order_values, boldyrev_ess.(order_values); color=PLOT_INK,
+        linestyle=:dashdot, linewidth=2.0, label=latex_legend_label("Boldyrev"))
+    axis.xticks = orders
+    publication_legend!(axis; position=:lt)
+    save_figure!(files, fig, output_dir, "phase_structure_ess", formats; overwrite)
+    if save_data(cfg)
+        path=joinpath(output_dir, "phase_structure_ess.csv")
+        write_text_output(path; overwrite) do io
+            println(io, "phase,order,zeta_over_zeta3,uncertainty,fit_points")
+            for result in phase_results, index in eachindex(orders)
+                @printf(io, "%s,%d,%.8e,%.8e,%d\n", result.phase.name, orders[index],
+                    result.exponents[index], result.errors[index], result.points[index])
+            end
+        end
+        push!(files,path)
+    end
+    return files
+end
+
 function radial_autocorrelation(cube; bins=60, box_size=1.0, axis_order=("x", "y", "z"))
     A = Float32.(cube)
     finite_values = filter(isfinite, A)
@@ -215,6 +374,8 @@ function plot_advanced_diagnostics!(files, fields, metadata, cfg, output_dir, fo
         save_figure!(files, fig, output_dir, "structure_$(sanitize(name))", formats;
             overwrite)
     end
+    plot_phase_ess!(files, fields, cfg, settings, output_dir, formats, overwrite,
+        injection_modes, dissipation_cells)
     save_data(cfg) || return files
     for name in string.(get(settings, "correlation_fields", String[]))
         haskey(fields, name) || error("Correlation references missing field '$name'")
