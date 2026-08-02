@@ -1,184 +1,114 @@
 # CubeAnalysis
 
-Configurable Julia pipeline for systematic analysis of three-dimensional FITS
-and HDF5 cubes. It produces maps, distributions,
-phase diagrams, conditional relations, scalar/vector spectra, HRO alignment,
-structure functions and optional numerical data products.
+Analyse automatique de cubes 3D FITS ou HDF5 avec Julia.
 
-## Run
+CubeAnalysis produit notamment des projections, histogrammes, diagrammes de
+phase, spectres de puissance, fonctions de structure et diagnostics HRO.
+
+## Installation
+
+```bash
+cd "/Users/jb270005/Desktop/CubeAnalysis"
+git pull origin main
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
+
+## Fichiers attendus
+
+Chaque simulation RAMSES doit contenir :
+
+```text
+density.fits
+temperature.fits
+Bx.fits
+By.fits
+Bz.fits
+Vx.fits
+Vy.fits
+Vz.fits
+```
+
+Le script RAMSES vérifie que les cubes font `256 x 256 x 256` et utilise une
+boîte de `50 x 50 x 50 pc`.
+
+## Analyser toutes les simulations
+
+```bash
+julia --startup-file=no --project=. scripts/run_simu_ramses.jl \
+  "/Users/jb270005/Desktop/simu_RAMSES" \
+  "/Users/jb270005/Desktop/simu_RAMSES/results/CubeAnalysis_final"
+```
+
+Pour tester seulement la première simulation, ajouter `1` :
+
+```bash
+julia --startup-file=no --project=. scripts/run_simu_ramses.jl \
+  "/Users/jb270005/Desktop/simu_RAMSES" \
+  "/Users/jb270005/Desktop/simu_RAMSES/results/CubeAnalysis_test" \
+  1
+```
+
+Les simulations déjà terminées sont ignorées. Comme `overwrite=false`, utiliser
+un nouveau dossier de sortie pour régénérer les figures après une modification.
+
+## Analyser un seul cube
+
+Modifier `input_dir` et `output_dir` dans `config/cube_analysis.toml`, puis :
 
 ```bash
 julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 ```
 
-Relative paths are resolved from the TOML file. Outputs are written atomically
-and inputs are never modified. By default only figures are saved. Set
-`save_data=true` explicitly to write CSV/TOML products. `overwrite=false`
-applies to every enabled output.
+## Sorties principales
 
-## Memory modes
+- tranches et projections, dont la densité de colonne ;
+- histogrammes groupés de `Bx, By, Bz` et `Vx, Vy, Vz` ;
+- diagrammes de phase avec équilibre thermique et isothermes ;
+- spectres scalaires, magnétiques, cinétiques, de vitesse et de vorticité ;
+- séparation solénoïdale/compressive ;
+- fréquence de Nyquist et pentes de Kolmogorov/Burgers ;
+- HRO et paramètre d’alignement ;
+- fonctions de structure, autocorrélations et diagnostics physiques.
+
+Les figures sont sans titre et sans grille. Les textes, ticks, légendes et
+colorbars utilisent LaTeX. Par défaut, seuls les graphiques sont sauvegardés.
+
+Pour écrire aussi les CSV et TOML :
+
+```toml
+[run]
+save_data = true
+```
+
+## Mémoire
+
+Réglages recommandés pour les gros cubes :
 
 ```toml
 [run]
 field_by_field = true
-memory_budget_gb = 32
-sample_stride = 37
+memory_budget_gb = 12
+sample_stride = 16
 atomic_directory = true
-save_data = false
 ```
 
-`field_by_field=true` reloads only the fields needed by the active analysis
-instead of retaining the full dataset. Derived norms and products are lazy.
-HDF5 conversion is performed in bounded hyperslabs; control their temporary
-size with `chunk_mb` on each field. Scalar FFTs use reusable `Float32` real-FFT
-buffers. A stage stops before allocating a known working set above
-`memory_budget_gb`; zero disables the limit.
+`field_by_field=true` évite de conserver tous les champs en mémoire. Une valeur
+`memory_budget_gb = 0` désactive la limite.
 
-With `atomic_directory=true`, the complete run is built in a sibling temporary
-directory and replaces the previous output only after every stage succeeds.
+## HRO et Ibáñez
 
-## Geometry and physical spectra
+Deux figures différentes peuvent être produites :
 
-```toml
-[grid]
-box_size = [50.0, 50.0, 100.0]
-box_unit = "pc"
-axis_order = ["x", "y", "z"]
-periodic = true
+- `alignment_*.png` : HRO générique configurable ;
+- `xi_*.png` : convention du script `make_ibanez_alignment.jl`.
 
-[spectra]
-fields = ["density", "Bmag"]
-quantity = "shell"       # or "average"
-compensation = 1.6666667  # plot k^(5/3) P(k)
-fit_range = [0.2, 10.0]
-window = "none"          # or "hann"
+La figure `xi_*.png` utilise 40 bins en cosinus, avec
+`|cos(phi)| >= 0.75` pour le parallèle et `|cos(phi)| <= 0.25` pour le
+perpendiculaire. C’est cette figure qu’il faut comparer aux anciens résultats
+Ibáñez.
+
+## Tests
+
+```bash
+julia --startup-file=no --project=. -e 'using Pkg; Pkg.test()'
 ```
-
-Exported wavenumbers are physical. CSV files contain both the mean power per
-mode and integrated shell energy, while the companion fit TOML records the
-log-log slope and standard error.
-
-Vector spectra support Helmholtz decomposition:
-
-```toml
-[[vector_spectra]]
-name = "kinetic"
-components = ["Vx", "Vy", "Vz"]
-weight_field = "density"
-weight_power = 0.5
-```
-
-This example analyzes `sqrt(density) * velocity`. Omitting the weight gives a
-plain velocity or magnetic spectrum. `[[cross_spectra]]` entries accept
-`name`, `first`, `second`, and `bins`, and export the complex cross-spectrum
-and spectral coherence.
-
-The default configuration also produces the spectral vorticity power from
-`omega_hat = i k cross v_hat`. Scalar and vector spectral figures mark the
-physical Nyquist wavenumber. The unweighted velocity spectrum includes
-Kolmogorov `k^(-5/3)` and Burgers `k^(-2)` reference slopes; their normalization
-is visual and does not replace the reported spectral fit.
-
-## HRO
-
-```toml
-[[alignments]]
-name = "density_gradient_vs_B"
-scalar = "density"
-vector = ["Bx", "By", "Bz"]
-condition = "density"
-weighting = "uniform"       # or "gradient"
-angle_coordinate = "cosine" # or "degrees"
-bootstrap_replicates = 200
-bootstrap_seed = 1234
-```
-
-The CSV contains the alignment parameter and its bootstrap uncertainty.
-
-Two distinct alignment figures are produced when `xi_plot=true`:
-
-- `alignment_*.png` is the configurable generic HRO (quantile-conditioned bins,
-  optional gradient weighting and the Soler-style angular sectors);
-- `xi_*.png` reproduces the convention used by
-  `Desktop/alignement B_n/make_ibanez_alignment.jl`: 40 cosine bins,
-  parallel `|cos(phi)| >= 0.75`, perpendicular `|cos(phi)| <= 0.25`, and a
-  non-periodic central gradient at the box boundaries.
-
-These figures answer related but non-identical questions and should not be
-compared point-for-point unless their definitions are made identical.
-
-## Masks and weights
-
-Every phase-diagram or conditional-relation entry may include:
-
-```toml
-mask_field = "temperature"
-mask_min = 100.0
-mask_max = 8000.0
-weight_field = "density"
-```
-
-## Advanced diagnostics
-
-```toml
-[plots]
-advanced_diagnostics = true
-
-[diagnostics]
-structure_fields = ["density", "Vmag"]
-structure_orders = [1, 2, 3]
-structure_samples = 100000
-correlation_fields = ["density", "Bmag"]
-physics = true
-```
-
-Physics mode derives sonic Mach number, Alfvén Mach number, and plasma beta.
-Its unit conversion and mean molecular weight are configurable; see the sample
-configuration.
-
-## Diagnostics complementary to LesHouchesGit
-
-CubeAnalysis also provides three generic diagnostics intentionally absent from
-the LesHouchesGit figure registry:
-
-- excursion-set topology: filling factor, physical interface area, connected
-  components, largest-component fraction, and boundary spanning;
-- a cylindrical spectrum in `(k_parallel, k_perpendicular)` relative to an
-  explicit direction or the measured mean magnetic field;
-- longitudinal and transverse vector structure functions, including skewness,
-  flatness and fitted intermittency exponents for each grid direction.
-
-Enable them with `plots.topology`, `plots.anisotropic_spectra`, and
-`plots.directional_structure_functions`. Complete `[[topology]]`,
-`[[anisotropic_spectra]]`, and `[[directional_structure_functions]]` examples
-are provided in the default configuration. They are disabled there because
-topological connectivity and directional increments can be expensive on a
-1024³ cube.
-
-## Snapshot series
-
-Add snapshots at top level to run the same analysis over time:
-
-```toml
-[[snapshots]]
-name = "output_00010"
-time = 0.5
-input_dir = "/data/run/output_00010"
-
-[[snapshots]]
-name = "output_00020"
-time = 1.0
-input_dir = "/data/run/output_00020"
-```
-
-Each snapshot gets an isolated subdirectory. CSV/TOML files, including
-`snapshot_evolution.csv`, are written only when `[run].save_data = true`; that
-file combines field statistics for temporal comparison.
-
-## Reproducibility
-
-When `save_data=true`, `analysis_manifest.toml` embeds the resolved configuration, Julia and package
-version information, generated files, and per-stage timing. `input_quality.csv`
-reports NaN, infinities and non-positive values. The committed `Manifest.toml`
-allows `Pkg.instantiate()` and `Pkg.test()` without the former unregistered
-`JuliaCommon` dependency.
