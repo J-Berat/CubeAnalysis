@@ -29,6 +29,10 @@ end
     native_log_axis = CubeAnalysis.latex_axis(log_figure[1, 1]; xscale=log10, yscale=log10)
     @test native_log_axis.xminorticksvisible[]
     @test native_log_axis.yminorticksvisible[]
+    tick_values, tick_labels = CubeAnalysis.latex_log_ticks(0.1, 100.0)
+    @test tick_values ≈ [0.1, 1.0, 10.0, 100.0]
+    @test string.(tick_labels) == [raw"$10^{-1}$", raw"$10^{0}$",
+        raw"$10^{1}$", raw"$10^{2}$"]
     explicit_log_axis = CubeAnalysis.latex_axis(log_figure[1, 2];
         xlogcoordinates=true, ylogcoordinates=true)
     @test explicit_log_axis.xminorticksvisible[]

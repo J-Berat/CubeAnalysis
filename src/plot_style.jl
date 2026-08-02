@@ -73,6 +73,25 @@ end
 
 latex_tickformat(values) = latex_number.(values)
 
+function latex_log_ticks(vmin, vmax)
+    isfinite(vmin) && isfinite(vmax) && 0 < vmin < vmax ||
+        return (Float64[], LaTeXString[])
+    lower, upper = log10(vmin), log10(vmax)
+    target_step = (upper - lower) / 4
+    candidates = (0.25, 0.5, 1.0, 2.0, 5.0)
+    step = candidates[argmin(abs.(log.(collect(candidates) ./ max(target_step, eps()))))]
+    first_exponent = ceil(lower / step) * step
+    last_exponent = floor(upper / step) * step
+    exponents = collect(first_exponent:step:last_exponent)
+    values = 10.0 .^ exponents
+    labels = map(exponents) do exponent
+        rounded = round(exponent; digits=8)
+        rendered = isinteger(rounded) ? string(Int(rounded)) : @sprintf("%.2g", rounded)
+        latexstring("10^{", rendered, "}")
+    end
+    return values, labels
+end
+
 function latex_axis(parent; kwargs...)
     options = Dict{Symbol,Any}(kwargs)
     pop!(options, :title, nothing)
@@ -113,14 +132,18 @@ function latex_axis(parent; kwargs...)
     get!(options, :ylabelpadding, 12)
     get!(options, :xticklabelpad, 6)
     get!(options, :yticklabelpad, 6)
-    if xlogcoordinates || get(options, :xscale, identity) === log10
+    native_xlog = get(options, :xscale, identity) === log10
+    native_ylog = get(options, :yscale, identity) === log10
+    if xlogcoordinates || native_xlog
         options[:xminorticksvisible] = true
         get!(options, :xminorticks, IntervalsBetween(xlogcoordinates ? 10 : 9))
     end
-    if ylogcoordinates || get(options, :yscale, identity) === log10
+    if ylogcoordinates || native_ylog
         options[:yminorticksvisible] = true
         get!(options, :yminorticks, IntervalsBetween(ylogcoordinates ? 10 : 9))
     end
+    native_xlog && get!(options, :xticks, latex_log_ticks)
+    native_ylog && get!(options, :yticks, latex_log_ticks)
     get!(options, :xtickformat, latex_tickformat)
     get!(options, :ytickformat, latex_tickformat)
     return Axis(parent; options...)
