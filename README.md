@@ -8,9 +8,17 @@ structure functions, and magnetic-field alignment diagnostics.
 ## Installation
 
 ```bash
+cd "/Users/jb270005/Desktop"
+git clone https://github.com/J-Berat/CubeAnalysis.git
+cd CubeAnalysis
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
+
+To update an existing installation:
+
+```bash
 cd "/Users/jb270005/Desktop/CubeAnalysis"
 git pull origin main
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
 ## Required files
