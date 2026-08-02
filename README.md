@@ -1,9 +1,9 @@
 # CubeAnalysis
 
-Analyse automatique de cubes 3D FITS ou HDF5 avec Julia.
+Automated analysis of 3D FITS and HDF5 cubes with Julia.
 
-CubeAnalysis produit notamment des projections, histogrammes, diagrammes de
-phase, spectres de puissance, fonctions de structure et diagnostics HRO.
+CubeAnalysis generates projections, histograms, phase diagrams, power spectra,
+structure functions, and magnetic-field alignment diagnostics.
 
 ## Installation
 
@@ -13,9 +13,9 @@ git pull origin main
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
-## Fichiers attendus
+## Required files
 
-Chaque simulation RAMSES doit contenir :
+Each RAMSES simulation must contain:
 
 ```text
 density.fits
@@ -28,10 +28,10 @@ Vy.fits
 Vz.fits
 ```
 
-Le script RAMSES vérifie que les cubes font `256 x 256 x 256` et utilise une
-boîte de `50 x 50 x 50 pc`.
+The RAMSES batch script expects `256 x 256 x 256` cubes and uses a
+`50 x 50 x 50 pc` box.
 
-## Analyser toutes les simulations
+## Analyze all simulations
 
 ```bash
 julia --startup-file=no --project=. scripts/run_simu_ramses.jl \
@@ -39,7 +39,7 @@ julia --startup-file=no --project=. scripts/run_simu_ramses.jl \
   "/Users/jb270005/Desktop/simu_RAMSES/results/CubeAnalysis_final"
 ```
 
-Pour tester seulement la première simulation, ajouter `1` :
+Add `1` to process only the first simulation:
 
 ```bash
 julia --startup-file=no --project=. scripts/run_simu_ramses.jl \
@@ -48,41 +48,41 @@ julia --startup-file=no --project=. scripts/run_simu_ramses.jl \
   1
 ```
 
-Les simulations déjà terminées sont ignorées. Comme `overwrite=false`, utiliser
-un nouveau dossier de sortie pour régénérer les figures après une modification.
+Completed simulations are skipped. Because batch runs use `overwrite=false`,
+choose a new output directory when regenerating figures after a code change.
 
-## Analyser un seul cube
+## Analyze one cube
 
-Modifier `input_dir` et `output_dir` dans `config/cube_analysis.toml`, puis :
+Set `input_dir` and `output_dir` in `config/cube_analysis.toml`, then run:
 
 ```bash
 julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 ```
 
-## Sorties principales
+## Main outputs
 
-- tranches et projections, dont la densité de colonne ;
-- histogrammes groupés de `Bx, By, Bz` et `Vx, Vy, Vz` ;
-- diagrammes de phase avec équilibre thermique et isothermes ;
-- spectres scalaires, magnétiques, cinétiques, de vitesse et de vorticité ;
-- séparation solénoïdale/compressive ;
-- fréquence de Nyquist et pentes de Kolmogorov/Burgers ;
-- HRO et paramètre d’alignement ;
-- fonctions de structure, autocorrélations et diagnostics physiques.
+- slices and projections, including column density;
+- grouped `Bx, By, Bz` and `Vx, Vy, Vz` histograms;
+- phase diagrams with thermal equilibrium and isotherms;
+- scalar, magnetic, kinetic, velocity, and vorticity spectra;
+- solenoidal and compressive spectral components;
+- Nyquist marker and Kolmogorov/Burgers reference slopes;
+- HRO and alignment parameters;
+- structure functions, autocorrelations, and physical diagnostics.
 
-Les figures sont sans titre et sans grille. Les textes, ticks, légendes et
-colorbars utilisent LaTeX. Par défaut, seuls les graphiques sont sauvegardés.
+Figures have no titles or grid lines. Text, ticks, legends, and colorbar labels
+use LaTeX. Only figures are saved by default.
 
-Pour écrire aussi les CSV et TOML :
+Enable CSV and TOML outputs explicitly with:
 
 ```toml
 [run]
 save_data = true
 ```
 
-## Mémoire
+## Memory settings
 
-Réglages recommandés pour les gros cubes :
+Recommended settings for large cubes:
 
 ```toml
 [run]
@@ -92,20 +92,14 @@ sample_stride = 16
 atomic_directory = true
 ```
 
-`field_by_field=true` évite de conserver tous les champs en mémoire. Une valeur
-`memory_budget_gb = 0` désactive la limite.
+`field_by_field=true` avoids keeping every field in memory. Set
+`memory_budget_gb = 0` to disable the memory limit.
 
-## HRO et Ibáñez
+## Alignment outputs
 
-Deux figures différentes peuvent être produites :
-
-- `alignment_*.png` : HRO générique configurable ;
-- `xi_*.png` : convention du script `make_ibanez_alignment.jl`.
-
-La figure `xi_*.png` utilise 40 bins en cosinus, avec
-`|cos(phi)| >= 0.75` pour le parallèle et `|cos(phi)| <= 0.25` pour le
-perpendiculaire. C’est cette figure qu’il faut comparer aux anciens résultats
-Ibáñez.
+- `alignment_*.png` contains the configurable HRO and alignment parameter.
+- `xi_*.png` uses 40 cosine bins, with `|cos(phi)| >= 0.75` for parallel
+  orientations and `|cos(phi)| <= 0.25` for perpendicular orientations.
 
 ## Tests
 
