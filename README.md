@@ -74,7 +74,7 @@ julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 - phase diagrams with thermal equilibrium and isotherms;
 - scalar, magnetic, kinetic, velocity, and vorticity spectra;
 - solenoidal and compressive spectral components;
-- Nyquist marker and Kolmogorov/Burgers reference slopes;
+- shaded numerical-dissipation/noise region and Kolmogorov/Burgers reference slopes;
 - HRO and alignment parameters;
 - structure functions, autocorrelations, and physical diagnostics.
 

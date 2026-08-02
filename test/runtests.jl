@@ -138,6 +138,9 @@ end
         @test vorticity_spectrum.compressive[vorticity_peak] ≤
             1e-6 * vorticity_spectrum.total[vorticity_peak]
         @test CubeAnalysis.nyquist_wavenumber(shape, lengths) ≈ 6.0
+        @test CubeAnalysis.dissipation_wavenumber(shape, lengths; cells=4.0) ≈ 3.0
+        @test_throws ErrorException CubeAnalysis.dissipation_wavenumber(shape, lengths;
+            cells=1.5)
         reference_x, reference_y = CubeAnalysis.reference_power_law(
             [1.0, 2.0, 4.0, 8.0], ones(4), -5 / 3)
         @test (reference_y[end] - reference_y[1]) /

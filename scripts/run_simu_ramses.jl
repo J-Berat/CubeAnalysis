@@ -84,6 +84,7 @@ function configure(base, input_dir, output_dir)
     cfg["spectra"]["quantity"] = "shell"
     cfg["spectra"]["fit_range"] = [4kmin, 0.5kmax]
     cfg["spectra"]["reference_range"] = [4kmin, 0.5kmax]
+    cfg["spectra"]["dissipation_cells"] = 4.0
     cfg["spectra"]["velocity_fields"] = ["Vmag"]
     cfg["spectra"]["velocity_reference_slopes"] = [-5 / 3, -2.0]
     for spectrum in get(cfg, "vector_spectra", Any[])

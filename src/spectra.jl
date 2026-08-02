@@ -165,12 +165,24 @@ function nyquist_wavenumber(shape, box_size=(2π, 2π, 2π),
     return minimum(π .* collect(shape) ./ collect(lengths))
 end
 
-function add_nyquist_marker!(axis, shape, box_size, axis_order; logarithmic_coordinates=true)
+function dissipation_wavenumber(shape, box_size=(2π, 2π, 2π),
+        axis_order=("x", "y", "z"); cells=4.0)
+    cells = Float64(cells)
+    cells >= 2 || error("spectra.dissipation_cells must be at least 2")
+    return 2 * nyquist_wavenumber(shape, box_size, axis_order) / cells
+end
+
+function add_dissipation_region!(axis, shape, box_size, axis_order; cells=4.0,
+        logarithmic_coordinates=true)
     nyquist = nyquist_wavenumber(shape, box_size, axis_order)
-    position = logarithmic_coordinates ? log10(nyquist) : nyquist
-    vlines!(axis, [position]; color=:black, linestyle=:dashdot, linewidth=2.0,
-        label=latexstring("k_{\\mathrm{Nyq}}"))
-    return nyquist
+    dissipation = dissipation_wavenumber(shape, box_size, axis_order; cells)
+    left, right = logarithmic_coordinates ? log10.((dissipation, nyquist)) :
+        (dissipation, nyquist)
+    vspan!(axis, left, right; color=(:gray55, 0.25),
+        label=latexstring("\\mathrm{dissipation/noise}"))
+    vlines!(axis, [left]; color=:gray25, linestyle=:dashdot, linewidth=2.0,
+        label=latexstring("k_{\\mathrm{diss}}"))
+    return dissipation
 end
 
 function reference_power_law(k, power, slope; k_range=nothing, offset=0.0)
@@ -250,6 +262,10 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
             xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
             ylabel=spectrum_label, xlogcoordinates=true, ylogcoordinates=true,
             title=replace(name, '_' => ' '))
+        dissipation_cells = Float64(get(spec, "dissipation_cells",
+            get(get(cfg, "spectra", Dict()), "dissipation_cells", 4.0)))
+        add_dissipation_region!(ax, analysis_field_size(fields, first(components)),
+            box_size, axis_order; cells=dissipation_cells)
         logk, logtotal = log_spectrum_coordinates(result.k, result.total)
         lines!(ax, logk, logtotal; label=latex_legend_label("total"), linewidth=2.5)
         if transform == "none"
@@ -261,8 +277,6 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
         slopes = get(spec, "reference_slopes", Float64[])
         add_reference_slopes!(ax, result.k, result.total, slopes;
             k_range=get(spec, "reference_range", nothing))
-        add_nyquist_marker!(ax, analysis_field_size(fields, first(components)),
-            box_size, axis_order)
         axislegend(ax)
         save_figure!(files, fig, output_dir, "vector_spectrum_$(sanitize(name))", formats; overwrite)
     end
@@ -330,9 +344,11 @@ function plot_cross_spectra!(files, fields, cfg, output_dir, formats, overwrite)
         fig = Figure(size=(760, 520)); ax = latex_axis(fig[1, 1], xscale=log10,
             xlabel=latexstring("k\\ [\\mathrm{physical}]"),
             ylabel=latexstring("\\mathcal{C}(k)"), title=replace(name, '_' => ' '))
+        dissipation_cells = Float64(get(spec, "dissipation_cells",
+            get(get(cfg, "spectra", Dict()), "dissipation_cells", 4.0)))
+        add_dissipation_region!(ax, analysis_field_size(fields, first), box_size,
+            axis_order; cells=dissipation_cells, logarithmic_coordinates=false)
         lines!(ax, result.k, result.coherence; linewidth=2.5); ylims!(ax, 0, 1.05)
-        add_nyquist_marker!(ax, analysis_field_size(fields, first), box_size,
-            axis_order; logarithmic_coordinates=false)
         axislegend(ax)
         save_figure!(files, fig, output_dir, "cross_spectrum_$(sanitize(name))", formats; overwrite)
     end
@@ -392,6 +408,9 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
         ax = latex_axis(fig[1, 1], title="3-D isotropic spectrum - $(metadata[name].label)",
             xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
             ylabel=ylabel, xlogcoordinates=true, ylogcoordinates=true)
+        dissipation_cells = Float64(get(settings, "dissipation_cells", 4.0))
+        add_dissipation_region!(ax, size(fields[name]), box_size, axis_order;
+            cells=dissipation_cells)
         logk, logpower = log_spectrum_coordinates(result.k, compensated)
         lines!(ax, logk, logpower; color=:darkorange, linewidth=2.5)
         scatter!(ax, logk, logpower; color=:darkorange, markersize=6)
@@ -400,7 +419,6 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
             add_reference_slopes!(ax, result.k, compensated, slopes;
                 k_range=get(settings, "reference_range", fit_range), compensation)
         end
-        add_nyquist_marker!(ax, size(fields[name]), box_size, axis_order)
         axislegend(ax)
         save_figure!(files, fig, output_dir, "spectrum_$(sanitize(name))", formats; overwrite)
     end
