@@ -1,40 +1,65 @@
-function periodic_index(index, offset, length)
-    return mod1(index + offset, length)
+"""Logarithmically spaced lags in cells, up to `minimum(shape) / divisor`."""
+default_structure_lags(shape, divisor, count) = unique!(round.(Int,
+    10 .^ range(0, log10(max(1, minimum(shape) ÷ divisor)); length=count)))
+
+"""
+Draw a random cell and the cell displaced by `lag` along a random axis.
+
+Returns `(inside, i, j, k, ti, tj, tk)`; `inside` is false when the partner
+falls outside a non-periodic box. Keeping the coordinates in scalars rather
+than a vector avoids one heap allocation per sample, which dominates the cost
+of the structure-function loops.
+"""
+@inline function random_increment_pair(rng, shape, lag, periodic)
+    axis = rand(rng, 1:3)
+    direction = rand(rng, Bool) ? lag : -lag
+    i = rand(rng, 1:shape[1]); j = rand(rng, 1:shape[2]); k = rand(rng, 1:shape[3])
+    target = (i, j, k)[axis] + direction
+    if periodic
+        target = mod1(target, shape[axis])
+    elseif !(1 <= target <= shape[axis])
+        return (false, i, j, k, i, j, k)
+    end
+    return (true, i, j, k, axis == 1 ? target : i, axis == 2 ? target : j,
+        axis == 3 ? target : k)
 end
 
+"""
+Absolute structure functions `S_p(l) = <|f(x+l) - f(x)|^p>` estimated by Monte
+Carlo sampling.
+
+Each lag is seeded independently from `seed`, so results are reproducible and
+independent of the number of threads.
+"""
 function structure_functions(cube; orders=1:3, lags=nothing, samples_per_lag=100_000,
         seed=1234, periodic=true)
-    selected_lags = isnothing(lags) ? unique!(round.(Int,
-        10 .^ range(0, log10(max(1, minimum(size(cube)) ÷ 2)); length=18))) : Int.(lags)
+    selected_lags = isnothing(lags) ?
+        default_structure_lags(size(cube), 2, 18) : Int.(lags)
     all(>(0), selected_lags) || error("Structure-function lags must be positive")
     selected_orders = Int.(orders)
-    rng = MersenneTwister(seed)
+    shape = size(cube)
     values = fill(NaN, length(selected_lags), length(selected_orders))
     counts = zeros(Int, length(selected_lags))
-    for (li, lag) in enumerate(selected_lags)
+    Threads.@threads for lag_index in eachindex(selected_lags)
+        lag = selected_lags[lag_index]
+        rng = MersenneTwister(seed + lag_index)
         sums = zeros(Float64, length(selected_orders))
-        for _ in 1:samples_per_lag
-            axis = rand(rng, 1:3); direction = rand(rng, Bool) ? lag : -lag
-            i = rand(rng, axes(cube, 1)); j = rand(rng, axes(cube, 2)); k = rand(rng, axes(cube, 3))
-            coordinates = [i, j, k]
-            target = coordinates[axis] + direction
-            if periodic
-                coordinates[axis] = mod1(target, size(cube, axis))
-            elseif !(1 <= target <= size(cube, axis))
-                continue
-            else
-                coordinates[axis] = target
-            end
+        count = 0
+        @inbounds for _ in 1:samples_per_lag
+            inside, i, j, k, ti, tj, tk =
+                random_increment_pair(rng, shape, lag, periodic)
+            inside || continue
             first = Float64(cube[i, j, k])
-            second = Float64(cube[coordinates...])
+            second = Float64(cube[ti, tj, tk])
             isfinite(first) && isfinite(second) || continue
             delta = abs(second - first)
-            @inbounds for (oi, order) in enumerate(selected_orders)
-                sums[oi] += delta^order
+            for (order_index, order) in enumerate(selected_orders)
+                sums[order_index] += delta^order
             end
-            counts[li] += 1
+            count += 1
         end
-        counts[li] > 0 && (values[li, :] .= sums ./ counts[li])
+        counts[lag_index] = count
+        count > 0 && (values[lag_index, :] .= sums ./ count)
     end
     return selected_lags, selected_orders, values, counts
 end
@@ -116,41 +141,39 @@ function phase_velocity_structure(vx, vy, vz, temperature, phases; orders=1:5,
     shape = size(vx)
     all(size(field) == shape for field in (vy, vz, temperature)) ||
         error("Phase ESS fields must have identical sizes")
-    selected_lags = isnothing(lags) ? unique!(round.(Int,
-        10 .^ range(0, log10(max(1, minimum(shape) ÷ 2)); length=18))) : Int.(lags)
+    selected_lags = isnothing(lags) ?
+        default_structure_lags(shape, 2, 18) : Int.(lags)
     selected_orders = Int.(orders)
     sums = zeros(Float64, length(selected_lags), length(phases), length(selected_orders))
     counts = zeros(Int, length(selected_lags), length(phases))
-    rng = MersenneTwister(seed)
-    for (lag_index, lag) in enumerate(selected_lags), _ in 1:samples_per_lag
-        axis = rand(rng, 1:3); direction = rand(rng, Bool) ? lag : -lag
-        i=rand(rng, axes(vx, 1)); j=rand(rng, axes(vx, 2)); k=rand(rng, axes(vx, 3))
-        ti, tj, tk = i, j, k
-        shifted = (i, j, k)[axis] + direction
-        if periodic
-            shifted = mod1(shifted, shape[axis])
-        elseif !(1 <= shifted <= shape[axis])
-            continue
+    Threads.@threads for lag_index in eachindex(selected_lags)
+        lag = selected_lags[lag_index]
+        rng = MersenneTwister(seed + lag_index)
+        @inbounds for _ in 1:samples_per_lag
+            inside, i, j, k, ti, tj, tk =
+                random_increment_pair(rng, shape, lag, periodic)
+            inside || continue
+            first_temperature = Float64(temperature[i, j, k])
+            second_temperature = Float64(temperature[ti, tj, tk])
+            isfinite(first_temperature) && isfinite(second_temperature) || continue
+            phase_index = findfirst(
+                phase -> phase.minimum <= first_temperature < phase.maximum &&
+                    phase.minimum <= second_temperature < phase.maximum, phases)
+            isnothing(phase_index) && continue
+            du2 = 0.0
+            for component in (vx, vy, vz)
+                first_value = Float64(component[i, j, k])
+                second_value = Float64(component[ti, tj, tk])
+                isfinite(first_value) && isfinite(second_value) || (du2 = NaN; break)
+                du2 += (second_value - first_value)^2
+            end
+            isfinite(du2) || continue
+            increment = sqrt(du2)
+            for (order_index, order) in enumerate(selected_orders)
+                sums[lag_index, phase_index, order_index] += increment^order
+            end
+            counts[lag_index, phase_index] += 1
         end
-        axis == 1 ? (ti=shifted) : axis == 2 ? (tj=shifted) : (tk=shifted)
-        first_temperature = Float64(temperature[i,j,k])
-        second_temperature = Float64(temperature[ti,tj,tk])
-        isfinite(first_temperature) && isfinite(second_temperature) || continue
-        phase_index = findfirst(phase -> phase.minimum <= first_temperature < phase.maximum &&
-            phase.minimum <= second_temperature < phase.maximum, phases)
-        isnothing(phase_index) && continue
-        du2 = 0.0
-        for component in (vx, vy, vz)
-            first_value = Float64(component[i,j,k]); second_value = Float64(component[ti,tj,tk])
-            isfinite(first_value) && isfinite(second_value) || (du2 = NaN; break)
-            du2 += (second_value - first_value)^2
-        end
-        isfinite(du2) || continue
-        increment = sqrt(du2)
-        for (order_index, order) in enumerate(selected_orders)
-            sums[lag_index, phase_index, order_index] += increment^order
-        end
-        counts[lag_index, phase_index] += 1
     end
     values = fill(NaN, size(sums))
     for lag_index in eachindex(selected_lags), phase_index in eachindex(phases)
@@ -177,12 +200,19 @@ function ess_exponents(structure, orders, selected_lags, lag_range; minimum_samp
         points[order_index] = length(valid)
         length(valid) >= 3 || continue
         x = log10.(structure[valid, third]); y = log10.(structure[valid, order_index])
-        xmean=mean(x); ymean=mean(y); denominator=sum(abs2, x .- xmean)
+        # Lags are sampled independently, so a lag averaging more increments
+        # constrains the exponent better; weight by sqrt of the sample count.
+        w = isnothing(minimum_samples) ? ones(length(valid)) :
+            sqrt.(Float64.(minimum_samples[valid]))
+        total = sum(w)
+        total > 0 || continue
+        xmean=sum(w .* x)/total; ymean=sum(w .* y)/total
+        denominator=sum(w .* abs2.(x .- xmean))
         denominator > 0 || continue
-        slope=sum((x .- xmean) .* (y .- ymean)) / denominator
+        slope=sum(w .* (x .- xmean) .* (y .- ymean)) / denominator
         residual=y .- (ymean - slope*xmean .+ slope .* x)
         exponents[order_index]=slope
-        uncertainties[order_index]=sqrt(sum(abs2, residual) /
+        uncertainties[order_index]=sqrt(sum(w .* abs2.(residual)) /
             (length(valid)-2) / denominator)
     end
     return exponents, uncertainties, points
@@ -208,7 +238,7 @@ function plot_phase_ess!(files, fields, cfg, settings, output_dir, formats, over
     lag_range = [dissipation_cells, minimum(size(cube)) / injection_modes]
     fig = publication_figure(size=(900, 620)); axis = latex_axis(fig[1, 1],
         xlabel=latexstring("p"), ylabel=latexstring("\\zeta_p/\\zeta_3\\ (\\mathrm{ESS})"))
-    phase_results = []
+    phase_results = NamedTuple[]
     for (phase_index, phase) in enumerate(phases)
         exponents, errors, points = ess_exponents(values[:, phase_index, :], orders,
             lags, lag_range; minimum_samples=counts[:, phase_index])
@@ -222,7 +252,7 @@ function plot_phase_ess!(files, fields, cfg, settings, output_dir, formats, over
             marker=series_marker(phase_index))
         errorbars!(axis, orders[valid], exponents[valid], errors[valid];
             color=(color, 0.72), whiskerwidth=7, linewidth=1.2)
-        push!(phase_results, (phase, exponents, errors, points))
+        push!(phase_results, (; phase, exponents, errors, points))
     end
     order_values = Float64.(orders)
     lines!(axis, order_values, kolmogorov_ess.(order_values); color=PLOT_INK,
@@ -282,40 +312,6 @@ function radial_autocorrelation(cube; bins=60, box_size=1.0, axis_order=("x", "y
     return centers[keep], values, counts[keep], correlation_length
 end
 
-function physics_diagnostics(fields, spec; stride=1)
-    required = Dict(
-        "density" => string(get(spec, "density", "density")),
-        "temperature" => string(get(spec, "temperature", "temperature")),
-    )
-    velocity = string.(get(spec, "velocity", ["Vx", "Vy", "Vz"]))
-    magnetic = string.(get(spec, "magnetic", ["Bx", "By", "Bz"]))
-    names = [collect(values(required)); velocity; magnetic]
-    all(haskey(fields, name) for name in names) ||
-        error("Physics diagnostics reference missing fields")
-    gamma = Float64(get(spec, "gamma", 5 / 3))
-    mu = Float64(get(spec, "mean_molecular_weight", 1.27))
-    velocity_to_cms = Float64(get(spec, "velocity_to_cms", 1e5))
-    magnetic_to_gauss = Float64(get(spec, "magnetic_to_gauss", 1e-3))
-    k_B = 1.380649e-16; m_H = 1.6735575e-24
-    mach_sonic = Float64[]; mach_alfven = Float64[]; beta = Float64[]
-    density = fields[required["density"]]; temperature = fields[required["temperature"]]
-    vx, vy, vz = (fields[name] for name in velocity)
-    bx, by, bz = (fields[name] for name in magnetic)
-    for index in 1:stride:length(density)
-        n = Float64(density[index]); T = Float64(temperature[index])
-        v = velocity_to_cms * sqrt(Float64(vx[index])^2 + Float64(vy[index])^2 + Float64(vz[index])^2)
-        B = magnetic_to_gauss * sqrt(Float64(bx[index])^2 + Float64(by[index])^2 + Float64(bz[index])^2)
-        isfinite(n + T + v + B) && n > 0 && T > 0 && B > 0 || continue
-        rho = mu * m_H * n
-        sound = sqrt(gamma * k_B * T / (mu * m_H))
-        alfven = B / sqrt(4π * rho)
-        push!(mach_sonic, v / sound)
-        push!(mach_alfven, v / alfven)
-        push!(beta, 8π * n * k_B * T / B^2)
-    end
-    return Dict("mach_sonic" => mach_sonic, "mach_alfven" => mach_alfven, "plasma_beta" => beta)
-end
-
 function plot_advanced_diagnostics!(files, fields, metadata, cfg, output_dir, formats, overwrite)
     settings = get(cfg, "diagnostics", Dict())
     periodic = Bool(get(get(cfg, "grid", Dict()), "periodic", true))
@@ -331,7 +327,7 @@ function plot_advanced_diagnostics!(files, fields, metadata, cfg, output_dir, fo
     for name in string.(get(settings, "structure_fields", String[]))
         haskey(fields, name) || error("Structure function references missing field '$name'")
         cube = fields[name]
-        lags, orders, values, counts = structure_functions(fields[name];
+        lags, orders, values, counts = structure_functions(cube;
             orders=Int.(get(settings, "structure_orders", [1, 2, 3])),
             samples_per_lag=Int(get(settings, "structure_samples", 100_000)),
             seed=Int(get(settings, "seed", 1234)), periodic)
@@ -394,22 +390,6 @@ function plot_advanced_diagnostics!(files, fields, metadata, cfg, output_dir, fo
             TOML.print(io, Dict("e_folding_length" => length_scale); sorted=true)
         end
         push!(files, scale_path)
-    end
-    if Bool(get(settings, "physics", false))
-        diagnostics = physics_diagnostics(fields, settings;
-            stride=Int(get(cfg["run"], "sample_stride", 1)))
-        path = joinpath(output_dir, "physics_diagnostics.csv")
-        write_text_output(path; overwrite) do io
-            println(io, "quantity,samples,median,mean,std,q16,q84")
-            for name in sort!(collect(keys(diagnostics)))
-                values = diagnostics[name]
-                isempty(values) && continue
-                @printf(io, "%s,%d,%.8e,%.8e,%.8e,%.8e,%.8e\n", name, length(values),
-                    median(values), mean(values), std(values; corrected=false),
-                    quantile(values, 0.16), quantile(values, 0.84))
-            end
-        end
-        push!(files, path)
     end
     return files
 end

@@ -94,7 +94,6 @@ end
 
 function latex_axis(parent; kwargs...)
     options = Dict{Symbol,Any}(kwargs)
-    pop!(options, :title, nothing)
     xlogcoordinates = Bool(pop!(options, :xlogcoordinates, false))
     ylogcoordinates = Bool(pop!(options, :ylogcoordinates, false))
     for key in (:xlabel, :ylabel)
@@ -170,7 +169,6 @@ function latex_colorbar(parent, plot; kwargs...)
     return Colorbar(parent, plot; options...)
 end
 
-latex_layout_label(parent, text; kwargs...) = nothing
 latex_legend_label(text) = latex_text(text)
 
 function publication_legend!(axis; kwargs...)

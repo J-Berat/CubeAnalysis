@@ -73,8 +73,28 @@ function spectrum_details(cube; bins::Int=80, remove_mean::Bool=true,
     keep = weighted_modes .> 0
     shell = sums[keep]
     average = shell ./ weighted_modes[keep]
-    return (k=centers[keep], average=average, shell=shell,
-        modes=weighted_modes[keep], stored_modes=counts[keep], workspace=ws)
+    width = diff(edges)[keep]
+    return (k=centers[keep], average=average, shell=shell, energy=shell ./ width,
+        width=width, modes=weighted_modes[keep], stored_modes=counts[keep],
+        workspace=ws)
+end
+
+"""
+Pick the plotted quantity from a spectrum result.
+
+- `"energy"` is the shell-integrated spectral density `E(k) = sum|F|^2 / dk`.
+  Because the bins are logarithmic, `dk` grows like `k`, so only this
+  normalisation can be compared with the Kolmogorov `k^-5/3` or Burgers `k^-2`
+  references.
+- `"shell"` is the raw sum over the bin, whose slope is that of `E(k)` plus one.
+- `"average"` is the power per Fourier mode, whose slope is that of `E(k)`
+  minus two (`-11/3` for Kolmogorov).
+"""
+function spectrum_quantity(result, quantity::AbstractString)
+    quantity == "energy" && return result.energy
+    quantity == "shell" && return result.shell
+    quantity == "average" && return result.average
+    error("spectra.quantity must be energy, shell, or average; got '$quantity'")
 end
 
 function isotropic_spectrum(cube; bins::Int=80, remove_mean::Bool=true,
@@ -83,18 +103,43 @@ function isotropic_spectrum(cube; bins::Int=80, remove_mean::Bool=true,
     return result.k, result.average, result.modes
 end
 
-function spectral_fit(k, power, fit_range)
-    selected = findall(i -> fit_range[1] <= k[i] <= fit_range[2] && power[i] > 0, eachindex(k))
+"""
+Least-squares power-law slope of `power` against `k` over `fit_range`.
+
+`weights` gives the relative confidence of each bin. For a shell-averaged
+spectrum the natural choice is `sqrt(modes)`: logarithmic bins hold a number of
+Fourier modes growing like `k^3`, so an unweighted fit lets the handful of modes
+at low `k` count as much as the 10^5 modes near the Nyquist frequency.
+"""
+function spectral_fit(k, power, fit_range; weights=nothing)
+    selected = findall(i -> fit_range[1] <= k[i] <= fit_range[2] && power[i] > 0 &&
+        isfinite(power[i]) && k[i] > 0, eachindex(k))
     length(selected) >= 3 || return (NaN, NaN, length(selected))
-    x = log10.(k[selected]); y = log10.(power[selected])
-    xmean = mean(x); ymean = mean(y)
-    denominator = sum(abs2, x .- xmean)
-    slope = sum((x .- xmean) .* (y .- ymean)) / denominator
+    x = log10.(Float64.(k[selected])); y = log10.(Float64.(power[selected]))
+    w = isnothing(weights) ? ones(length(selected)) :
+        Float64.(weights[selected])
+    all(isfinite, w) && all(>=(0), w) && sum(w) > 0 ||
+        error("Spectral-fit weights must be finite and non-negative")
+    total = sum(w)
+    xmean = sum(w .* x) / total; ymean = sum(w .* y) / total
+    denominator = sum(w .* abs2.(x .- xmean))
+    denominator > 0 || return (NaN, NaN, length(selected))
+    slope = sum(w .* (x .- xmean) .* (y .- ymean)) / denominator
     intercept = ymean - slope * xmean
     residual = y .- (intercept .+ slope .* x)
-    stderr = length(x) > 2 ? sqrt(sum(abs2, residual) / (length(x) - 2) / denominator) : NaN
+    stderr = length(x) > 2 ?
+        sqrt(sum(w .* abs2.(residual)) / (length(x) - 2) / denominator) : NaN
     return slope, stderr, length(selected)
 end
+
+"""
+One-sigma uncertainty of a shell-averaged spectrum in log10 units.
+
+Each bin averages `modes` independent Fourier coefficients, so the relative
+error on the power is `1/sqrt(modes)`; in log10 that is a constant offset.
+"""
+log10_spectrum_uncertainty(modes) =
+    [count > 0 ? 1 / (log(10) * sqrt(count)) : NaN for count in modes]
 
 function add_spectral_fit!(axis, k, displayed_power, slope, slope_std, fit_range;
         compensation=0.0)
@@ -119,6 +164,7 @@ function vector_spectrum_details(vx, vy, vz; bins=80, box_size=(2π, 2π, 2π),
     shape = size(vx)
     size(vy) == shape && size(vz) == shape || error("Vector components must have equal sizes")
     fourier = Array{ComplexF32,3}[]
+    plan = plan_rfft(Array{Float32,3}(undef, shape); flags=FFTW.ESTIMATE)
     for component in (vx, vy, vz)
         A = Float32.(component)
         if !isnothing(weight)
@@ -134,7 +180,7 @@ function vector_spectrum_details(vx, vy, vz; bins=80, box_size=(2π, 2π, 2π),
             isfinite(A[i]) || (A[i] = replacement)
         end
         remove_mean && (A .-= mean(A))
-        push!(fourier, rfft(A) ./ sqrt(Float32(length(A))))
+        push!(fourier, (plan * A) ./ sqrt(Float32(length(A))))
     end
     lengths = box_lengths(box_size, axis_order)
     mode_axes = (FFTW.rfftfreq(shape[1]) .* shape[1], FFTW.fftfreq(shape[2]) .* shape[2],
@@ -163,8 +209,12 @@ function vector_spectrum_details(vx, vy, vz; bins=80, box_size=(2π, 2π, 2π),
         modes[bin] += weight
     end
     centers = sqrt.(edges[1:end-1] .* edges[2:end]); keep = modes .> 0
+    width = diff(edges)[keep]
     return (k=centers[keep], total=total[keep], solenoidal=solenoidal[keep],
-        compressive=compressive[keep], modes=modes[keep])
+        compressive=compressive[keep], modes=modes[keep], width=width,
+        total_energy=total[keep] ./ width,
+        solenoidal_energy=solenoidal[keep] ./ width,
+        compressive_energy=compressive[keep] ./ width)
 end
 
 function log_spectrum_coordinates(k, power)
@@ -307,22 +357,32 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
         if save_data(cfg)
             path = joinpath(output_dir, "vector_spectrum_$(sanitize(name)).csv")
             write_text_output(path; overwrite) do io
-                println(io, "k_physical,total_shell,solenoidal_shell,compressive_shell,compressive_fraction,modes")
+                println(io, "k_physical,bin_width,total_shell,solenoidal_shell,compressive_shell,total_energy,solenoidal_energy,compressive_energy,compressive_fraction,modes")
                 for i in eachindex(result.k)
                     fraction = result.total[i] > 0 ? result.compressive[i] / result.total[i] : NaN
-                    @printf(io, "%.8e,%.8e,%.8e,%.8e,%.8e,%d\n", result.k[i], result.total[i],
-                        result.solenoidal[i], result.compressive[i], fraction, result.modes[i])
+                    @printf(io, "%.8e,%.8e,%.8e,%.8e,%.8e,%.8e,%.8e,%.8e,%.8e,%d\n",
+                        result.k[i], result.width[i], result.total[i],
+                        result.solenoidal[i], result.compressive[i],
+                        result.total_energy[i], result.solenoidal_energy[i],
+                        result.compressive_energy[i], fraction, result.modes[i])
                 end
             end
             push!(files, path)
         end
+        quantity = string(get(spec, "quantity",
+            get(get(cfg, "spectra", Dict()), "quantity", "energy")))
+        quantity in ("energy", "shell") ||
+            error("A vector-spectrum quantity must be energy or shell; got '$quantity'")
+        total, solenoidal, compressive = quantity == "energy" ?
+            (result.total_energy, result.solenoidal_energy, result.compressive_energy) :
+            (result.total, result.solenoidal, result.compressive)
         box_unit = string(get(grid, "box_unit", "L"))
         spectrum_label = transform in ("curl", "vorticity") ?
             latexstring("\\log_{10}E_{\\omega}(k)") : latexstring("\\log_{10}E(k)")
         fig = publication_figure(); ax = latex_axis(fig[1, 1],
             xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
             ylabel=spectrum_label, xlogcoordinates=true, ylogcoordinates=true,
-            title=replace(name, '_' => ' '))
+            )
         dissipation_cells = Float64(get(spec, "dissipation_cells",
             get(get(cfg, "spectra", Dict()), "dissipation_cells", 4.0)))
         injection_modes = Float64(get(spec, "injection_modes",
@@ -330,22 +390,25 @@ function plot_vector_spectra!(files, fields, metadata, cfg, output_dir, formats,
         shape = analysis_field_size(fields, first(components))
         add_spectral_ranges!(ax, shape, box_size, axis_order;
             injection_modes, dissipation_cells)
-        logk, logtotal = log_spectrum_coordinates(result.k, result.total)
+        logk, logtotal = log_spectrum_coordinates(result.k, total)
+        valid = findall(index -> isfinite(result.k[index]) && result.k[index] > 0 &&
+            isfinite(total[index]) && total[index] > 0, eachindex(result.k, total))
+        errorbars!(ax, logk, logtotal, log10_spectrum_uncertainty(result.modes[valid]);
+            color=(PLOT_INK, 0.45), whiskerwidth=6, linewidth=1.1)
         lines!(ax, logk, logtotal; label=latex_legend_label("total"), linewidth=2.8,
             color=PLOT_INK)
         if transform == "none"
-            logk, logsolenoidal = log_spectrum_coordinates(result.k, result.solenoidal)
+            logk, logsolenoidal = log_spectrum_coordinates(result.k, solenoidal)
             lines!(ax, logk, logsolenoidal; label=latex_legend_label("solenoidal"),
                 linewidth=2.4, color=PLOT_BLUE)
-            logk, logcompressive = log_spectrum_coordinates(result.k, result.compressive)
+            logk, logcompressive = log_spectrum_coordinates(result.k, compressive)
             lines!(ax, logk, logcompressive; label=latex_legend_label("compressive"),
                 linewidth=2.4, color=PLOT_ORANGE, linestyle=:dash)
         end
         slopes = get(spec, "reference_slopes", Float64[])
         reference_range = inertial_fit_range(get(spec, "reference_range", nothing),
             shape, box_size, axis_order; injection_modes, dissipation_cells)
-        add_reference_slopes!(ax, result.k, result.total, slopes;
-            k_range=reference_range)
+        add_reference_slopes!(ax, result.k, total, slopes; k_range=reference_range)
         publication_legend!(ax)
         save_figure!(files, fig, output_dir, "vector_spectrum_$(sanitize(name))", formats; overwrite)
     end
@@ -355,13 +418,14 @@ function cross_spectrum_details(first, second; bins=80, box_size=(2π, 2π, 2π)
         axis_order=("x", "y", "z"))
     size(first) == size(second) || error("Cross-spectrum fields must have equal sizes")
     transformed = Array{ComplexF32,3}[]
+    plan = plan_rfft(Array{Float32,3}(undef, size(first)); flags=FFTW.ESTIMATE)
     for source in (first, second)
         A = Float32.(source)
         finite = filter(isfinite, A); isempty(finite) && error("Cross spectrum requires finite values")
         replacement = mean(finite)
         @inbounds for i in eachindex(A); isfinite(A[i]) || (A[i] = replacement); end
         A .-= mean(A)
-        push!(transformed, rfft(A) ./ sqrt(Float32(length(A))))
+        push!(transformed, (plan * A) ./ sqrt(Float32(length(A))))
     end
     shape = size(first); lengths = box_lengths(box_size, axis_order)
     modes_axes = (FFTW.rfftfreq(shape[1]) .* shape[1], FFTW.fftfreq(shape[2]) .* shape[2],
@@ -412,7 +476,7 @@ function plot_cross_spectra!(files, fields, cfg, output_dir, formats, overwrite)
         end
         fig = publication_figure(); ax = latex_axis(fig[1, 1], xscale=log10,
             xlabel=latexstring("k\\ [\\mathrm{physical}]"),
-            ylabel=latexstring("\\mathcal{C}(k)"), title=replace(name, '_' => ' '))
+            ylabel=latexstring("\\mathcal{C}(k)"))
         dissipation_cells = Float64(get(spec, "dissipation_cells",
             get(get(cfg, "spectra", Dict()), "dissipation_cells", 4.0)))
         injection_modes = Float64(get(spec, "injection_modes",
@@ -433,8 +497,9 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
     bins = Int(get(settings, "bins", 80))
     remove_mean = Bool(get(settings, "remove_mean", true))
     compensation = Float64(get(settings, "compensation", 0.0))
-    quantity = string(get(settings, "quantity", "average"))
-    quantity in ("average", "shell") || error("spectra.quantity must be average or shell")
+    quantity = string(get(settings, "quantity", "energy"))
+    quantity in ("energy", "average", "shell") ||
+        error("spectra.quantity must be energy, average, or shell; got '$quantity'")
     periodic = Bool(get(get(cfg, "grid", Dict()), "periodic", true))
     window = string(get(settings, "window", periodic ? "none" : "hann"))
     grid = get(cfg, "grid", Dict())
@@ -443,28 +508,30 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
     workspace = nothing
     for name in names
         haskey(fields, name) || error("Spectrum references missing field '$name'")
-        cells = length(fields[name])
-        enforce_memory_budget(fields, cfg; extra_bytes=12 * cells,
+        cube = fields[name]
+        shape = size(cube)
+        enforce_memory_budget(fields, cfg; extra_bytes=12 * length(cube),
             context="FFT workspace for '$name'")
-        size(fields[name]) == (isnothing(workspace) ? size(fields[name]) : size(workspace.input)) ||
-            (workspace = nothing)
-        result = spectrum_details(fields[name]; bins, remove_mean, box_size,
+        isnothing(workspace) || size(workspace.input) == shape || (workspace = nothing)
+        result = spectrum_details(cube; bins, remove_mean, box_size,
             axis_order, window, workspace)
         workspace = result.workspace
-        power = quantity == "average" ? result.average : result.shell
+        power = spectrum_quantity(result, quantity)
         compensated = power .* result.k .^ compensation
         dissipation_cells = Float64(get(settings, "dissipation_cells", 4.0))
         injection_modes = Float64(get(settings, "injection_modes", 4.0))
         fit_range = inertial_fit_range(get(settings, "fit_range", nothing),
-            size(fields[name]), box_size, axis_order; injection_modes, dissipation_cells)
-        slope, slope_std, fit_modes = spectral_fit(result.k, power, fit_range)
+            shape, box_size, axis_order; injection_modes, dissipation_cells)
+        slope, slope_std, fit_modes = spectral_fit(result.k, power, fit_range;
+            weights=sqrt.(result.modes))
         if save_data(cfg)
             path = joinpath(output_dir, "spectrum_$(sanitize(name)).csv")
             write_text_output(path; overwrite) do io
-                println(io, "k_physical,power_mean,power_shell,modes,compensated")
+                println(io, "k_physical,bin_width,power_mean,power_shell,power_energy,modes,compensated")
                 for index in eachindex(result.k)
-                    @printf(io, "%.8e,%.8e,%.8e,%d,%.8e\n", result.k[index],
-                        result.average[index], result.shell[index], result.modes[index], compensated[index])
+                    @printf(io, "%.8e,%.8e,%.8e,%.8e,%.8e,%d,%.8e\n", result.k[index],
+                        result.width[index], result.average[index], result.shell[index],
+                        result.energy[index], result.modes[index], compensated[index])
                 end
             end
             push!(files, path)
@@ -477,15 +544,22 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
             push!(files, fit_path)
         end
         fig = publication_figure()
-        ylabel = compensation == 0 ? latexstring("\\log_{10}P(k)") :
-            latexstring("\\log_{10}[k^{", compensation, "}P(k)]")
+        symbol = quantity == "energy" ? "E" : quantity == "average" ? "P" : "S"
+        ylabel = compensation == 0 ? latexstring("\\log_{10}", symbol, "(k)") :
+            latexstring("\\log_{10}[k^{", compensation, "}", symbol, "(k)]")
         box_unit = string(get(get(cfg, "grid", Dict()), "box_unit", "L"))
-        ax = latex_axis(fig[1, 1], title="3-D isotropic spectrum - $(metadata[name].label)",
+        ax = latex_axis(fig[1, 1],
             xlabel=latexstring("\\log_{10}(k\\ [\\mathrm{", box_unit, "}^{-1}])"),
             ylabel=ylabel, xlogcoordinates=true, ylogcoordinates=true)
-        add_spectral_ranges!(ax, size(fields[name]), box_size, axis_order;
+        add_spectral_ranges!(ax, shape, box_size, axis_order;
             injection_modes, dissipation_cells)
         logk, logpower = log_spectrum_coordinates(result.k, compensated)
+        valid = findall(index -> isfinite(result.k[index]) && result.k[index] > 0 &&
+            isfinite(compensated[index]) && compensated[index] > 0,
+            eachindex(result.k, compensated))
+        errorbars!(ax, logk, logpower,
+            log10_spectrum_uncertainty(result.modes[valid]);
+            color=(PLOT_BLUE, 0.55), whiskerwidth=6, linewidth=1.1)
         lines!(ax, logk, logpower; color=PLOT_BLUE, linewidth=2.7)
         scatter!(ax, logk, logpower; color=:white, strokecolor=PLOT_BLUE,
             strokewidth=1.2, markersize=6)
@@ -494,7 +568,7 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
         if name in string.(get(settings, "velocity_fields", ["Vmag"]))
             slopes = get(settings, "velocity_reference_slopes", [-5 / 3, -2.0])
             reference_range = inertial_fit_range(
-                get(settings, "reference_range", fit_range), size(fields[name]),
+                get(settings, "reference_range", fit_range), shape,
                 box_size, axis_order; injection_modes, dissipation_cells)
             add_reference_slopes!(ax, result.k, compensated, slopes;
                 k_range=reference_range, compensation)

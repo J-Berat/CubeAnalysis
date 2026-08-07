@@ -16,14 +16,43 @@ struct ProductField <: AbstractArray{Float32,3}
     shape::NTuple{3,Int}
 end
 
+"""
+Field store that reads cubes from disk on demand.
+
+Raw input cubes are kept in a least-recently-used cache, because a single
+analysis stage indexes the same field several times and derived fields such as
+`Bmag` pull in three components each. Derived fields are cheap views over the
+cached components and are therefore never cached themselves, which keeps the
+byte accounting free of double counting.
+"""
 mutable struct LazyFieldStore <: AbstractDict{String,AbstractArray{Float32,3}}
     cfg::Any
     names::Vector{String}
     reference_size::Union{Nothing,NTuple{3,Int}}
+    cache::Dict{String,Array{Float32,3}}
+    recency::Vector{String}
+    cache_bytes::Int
+    cache_budget::Int
 end
 
+"""
+Bytes the raw-cube cache may hold. `run.cache_gb` overrides it; otherwise half
+of `run.memory_budget_gb`, or 4 GiB when the budget is unlimited.
+"""
+function cache_budget_bytes(cfg)
+    explicit = Float64(get(cfg["run"], "cache_gb", -1.0))
+    explicit >= 0 && return round(Int, explicit * 1024^3)
+    budget = Float64(get(cfg["run"], "memory_budget_gb", 0.0))
+    budget > 0 && return round(Int, 0.5 * budget * 1024^3)
+    return 4 * 1024^3
+end
+
+LazyFieldStore(cfg, names, reference_size) = LazyFieldStore(cfg, names,
+    reference_size, Dict{String,Array{Float32,3}}(), String[], 0,
+    cache_budget_bytes(cfg))
+
 Base.length(store::LazyFieldStore) = length(store.names)
-Base.keys(store::LazyFieldStore) = store.names
+Base.keys(store::LazyFieldStore) = copy(store.names)
 Base.haskey(store::LazyFieldStore, name) = string(name) in store.names
 function Base.iterate(store::LazyFieldStore, state=1)
     state > length(store.names) && return nothing
@@ -31,14 +60,59 @@ function Base.iterate(store::LazyFieldStore, state=1)
     return (name => store[name], state + 1)
 end
 
+function touch_cache!(store::LazyFieldStore, name::String)
+    index = findfirst(==(name), store.recency)
+    isnothing(index) || deleteat!(store.recency, index)
+    push!(store.recency, name)
+    return store
+end
+
+function cache_cube!(store::LazyFieldStore, name::String, cube::Array{Float32,3})
+    bytes = sizeof(eltype(cube)) * length(cube)
+    bytes > store.cache_budget && return cube
+    while !isempty(store.recency) && store.cache_bytes + bytes > store.cache_budget
+        evicted = popfirst!(store.recency)
+        dropped = pop!(store.cache, evicted)
+        store.cache_bytes -= sizeof(eltype(dropped)) * length(dropped)
+    end
+    store.cache[name] = cube
+    store.cache_bytes += bytes
+    push!(store.recency, name)
+    return cube
+end
+
+"""Drop every cached cube, for instance before a stage with a large working set."""
+function empty_cache!(store::LazyFieldStore)
+    empty!(store.cache)
+    empty!(store.recency)
+    store.cache_bytes = 0
+    return store
+end
+
+empty_cache!(fields) = fields
+
+function read_input_cube(store::LazyFieldStore, name::String)
+    haskey(store.cache, name) && (touch_cache!(store, name); return store.cache[name])
+    cfg = store.cfg
+    spec = cfg["fields"][name]
+    path = resolve_path(cfg["run"]["input_dir"], string(spec["file"]))
+    cube = read_cube(path, spec, name)
+    budget_gb = Float64(get(cfg["run"], "memory_budget_gb", 0.0))
+    if budget_gb > 0
+        bytes = sizeof(eltype(cube)) * length(cube)
+        bytes <= budget_gb * 1024^3 || error(@sprintf(
+            "Field '%s' alone requires %.2f GiB, above memory_budget_gb=%.2f",
+            name, bytes / 1024^3, budget_gb))
+    end
+    return cache_cube!(store, name, cube)
+end
+
 function Base.getindex(store::LazyFieldStore, raw_name)
     name = string(raw_name)
     name in store.names || throw(KeyError(name))
     cfg = store.cfg
     value = if haskey(cfg["fields"], name)
-        spec = cfg["fields"][name]
-        path = resolve_path(cfg["run"]["input_dir"], string(spec["file"]))
-        read_cube(path, spec, name)
+        read_input_cube(store, name)
     else
         derived = get(cfg, "derived", Dict())
         vector_index = findfirst(spec -> string(spec["name"]) == name,
@@ -63,13 +137,6 @@ function Base.getindex(store::LazyFieldStore, raw_name)
     elseif size(value) != store.reference_size
         error("Field '$name' has size $(size(value)); expected $(store.reference_size)")
     end
-    budget_gb = Float64(get(cfg["run"], "memory_budget_gb", 0.0))
-    if budget_gb > 0
-        bytes = value isa Array ? sizeof(eltype(value)) * length(value) : 0
-        bytes <= budget_gb * 1024^3 || error(@sprintf(
-            "Field '%s' alone requires %.2f GiB, above memory_budget_gb=%.2f",
-            name, bytes / 1024^3, budget_gb))
-    end
     return value
 end
 
@@ -84,7 +151,7 @@ Base.IndexStyle(::Type{ProductField}) = IndexLinear()
 end
 
 function resident_bytes(fields)
-    fields isa LazyFieldStore && return 0
+    fields isa LazyFieldStore && return fields.cache_bytes
     seen = IdSet{Any}()
     total = 0
     function account(array)

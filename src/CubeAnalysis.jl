@@ -18,12 +18,20 @@ include("streaming.jl")
 include("spectra.jl")
 include("quality.jl")
 include("diagnostics.jl")
+include("physics_table.jl")
+include("pdf_statistics.jl")
 include("topology.jl")
 include("anisotropy.jl")
 include("directional_structure.jl")
 include("ibanez_alignment.jl")
 
 export run_analysis, load_config, load_fields, read_cube, periodic_gradient, isotropic_spectrum
+
+function __init__()
+    # Start Julia with -t auto (or JULIA_NUM_THREADS) to use this.
+    FFTW.set_num_threads(Threads.nthreads())
+    return nothing
+end
 
 struct FieldMeta
     label::String
@@ -388,7 +396,7 @@ function plot_slices!(files, fields, metadata, cfg, output_dir, formats, overwri
         for (row, position) in enumerate(positions), (column, axis) in enumerate(axes)
             map, index = slice_map(cube, axis, position)
             shown = transformed_map(map, meta.logscale)
-            ax = latex_axis(fig[row, column], title="$(axis) = $index",
+            ax = latex_axis(fig[row, column],
                 xlabel="pixel", ylabel="pixel", aspect=DataAspect())
             lo, hi = robust_range(shown, render)
             hm = heatmap!(ax, shown; colormap=meta.colormap, colorrange=(lo, hi))
@@ -396,8 +404,6 @@ function plot_slices!(files, fields, metadata, cfg, output_dir, formats, overwri
                 label=(meta.logscale ? "log10 " : "") * field_label(name, meta),
                 logcoordinates=meta.logscale)
         end
-        latex_layout_label(fig[0, 1:length(axes)], "Slices - $(field_label(name, meta))";
-            fontsize=22, tellwidth=false)
         save_figure!(files, fig, output_dir, "slices_$(sanitize(name))", formats; overwrite)
     end
 end
@@ -419,7 +425,7 @@ function plot_projections!(files, fields, metadata, cfg, output_dir, formats, ov
             map = is_column_density ? column_density_map(cube, axis, cfg) :
                 projection_map(cube, axis, statistic)
             shown = transformed_map(map, meta.logscale)
-            ax = latex_axis(fig[row, column], title="$(statistic), LOS $(axis)",
+            ax = latex_axis(fig[row, column],
                 xlabel="pixel", ylabel="pixel", aspect=DataAspect())
             lo, hi = robust_range(shown, render)
             hm = heatmap!(ax, shown; colormap=meta.colormap, colorrange=(lo, hi))
@@ -431,8 +437,6 @@ function plot_projections!(files, fields, metadata, cfg, output_dir, formats, ov
         end
         figure_label = is_column_density ?
             "Column density [$(column_density_unit(meta.unit))]" : field_label(name, meta)
-        latex_layout_label(fig[0, 1:length(axes)], "Projections - $figure_label";
-            fontsize=22, tellwidth=false)
         save_figure!(files, fig, output_dir, "projections_$(sanitize(name))", formats; overwrite)
     end
 end
@@ -455,11 +459,13 @@ end
 function histogram_counts(values, edges::AbstractVector)
     bins = length(edges) - 1
     bins > 1 || error("Histogram edges must define at least two bins")
+    issorted(edges) || error("Histogram edges must be increasing")
     counts = zeros(Float64, bins)
-    lo, hi = first(edges), last(edges)
-    scale = bins / (hi - lo)
+    # searchsortedlast rather than arithmetic binning, so that non-uniform
+    # edges (logarithmic ones, for instance) are handled correctly.
     @inbounds for value in values
-        bin = clamp(floor(Int, (value - lo) * scale) + 1, 1, bins)
+        isfinite(value) || continue
+        bin = clamp(searchsortedlast(edges, value), 1, bins)
         counts[bin] += 1
     end
     centers = 0.5 .* (edges[1:end-1] .+ edges[2:end])
@@ -481,8 +487,7 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
         ax = latex_axis(fig[1, 1],
             xlabel=(meta.logscale ? "log10 " : "") * field_label(name, meta),
             ylabel=normalize ? "probability density" : "cells",
-            xlogcoordinates=meta.logscale,
-            title="Distribution of $(meta.label)")
+            xlogcoordinates=meta.logscale)
         barplot!(ax, centers, counts; width=0.94width, color=(PLOT_BLUE, 0.78),
             strokecolor=PLOT_BLUE, strokewidth=0.7)
         save_figure!(files, fig, output_dir, "histogram_$(sanitize(name))", formats; overwrite)
@@ -510,8 +515,7 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
         ax = latex_axis(fig[1, 1],
             xlabel=(logscale ? "log10 " : "") * xlabel,
             ylabel=normalize ? "probability density" : "cells",
-            xlogcoordinates=logscale,
-            title=string(get(group, "title", replace(group_name, '_' => ' '))))
+            xlogcoordinates=logscale)
         for (index, name) in enumerate(names)
             centers, counts, width = histogram_counts(values[index], edges)
             normalize && (counts ./= sum(counts) * width)
@@ -650,7 +654,7 @@ function plot_phase_diagrams!(files, fields, metadata, cfg, output_dir, formats,
         x, y, weights = paired_sample_fields(fields, xname, yname, spec, stride, logx, logy)
         xe, ye, counts = histogram2d(x, y, bins; weights)
         fig = publication_figure(size=(900, 680))
-        ax = latex_axis(fig[1, 1], title=replace(name, '_' => ' '),
+        ax = latex_axis(fig[1, 1],
             xlabel=(logx ? "log10 " : "") * field_label(xname, metadata[xname]),
             ylabel=(logy ? "log10 " : "") * field_label(yname, metadata[yname]),
             xlogcoordinates=logx, ylogcoordinates=logy)
@@ -697,7 +701,14 @@ function plot_relations!(files, fields, metadata, cfg, output_dir, formats, over
         name, xname, yname = string(spec["name"]), string(spec["x"]), string(spec["y"])
         haskey(fields, xname) && haskey(fields, yname) || error("Relation '$name' references missing fields")
         logx, logy = Bool(get(spec, "log_x", false)), Bool(get(spec, "log_y", false))
-        x, y, weights = paired_sample_fields(fields, xname, yname, spec, 1, false, false)
+        # Relations used to sample every cell regardless of run.sample_stride,
+        # which builds three Float64 vectors the size of the cube.
+        stride = Int(get(spec, "stride", get(cfg["run"], "sample_stride", 1)))
+        stride >= 1 || error("Relation '$name' needs a stride of at least 1")
+        enforce_memory_budget(fields, cfg;
+            extra_bytes=3 * 8 * cld(prod(analysis_field_size(fields, xname)), stride),
+            context="relation '$name'")
+        x, y, weights = paired_sample_fields(fields, xname, yname, spec, stride, false, false)
         centers, means, deviations, counts = conditional_relation(x, y;
             bins=Int(get(spec, "bins", 30)),
             minimum=Int(get(spec, "minimum_per_bin", 100)), logx, logy, weights)
@@ -714,7 +725,7 @@ function plot_relations!(files, fields, metadata, cfg, output_dir, formats, over
         end
         lower = max.(means .- deviations, logy ? eps(Float64) : -Inf)
         fig = publication_figure()
-        ax = latex_axis(fig[1, 1], title=replace(name, '_' => ' '),
+        ax = latex_axis(fig[1, 1],
             xlabel=field_label(xname, metadata[xname]), ylabel=field_label(yname, metadata[yname]),
             xscale=logx ? log10 : identity, yscale=logy ? log10 : identity)
         band!(ax, centers, lower, means .+ deviations; color=(PLOT_BLUE, 0.16))
@@ -849,12 +860,12 @@ function plot_alignments!(files, fields, metadata, cfg, output_dir, formats, ove
         fig = publication_figure(size=(1120, 560))
         angle_label = angle_coordinate == "cosine" ? latexstring("|\\cos\\phi|") :
             latexstring("\\phi\\ [^{\\circ}]")
-        ax1 = latex_axis(fig[1, 1], title="HRO ($(weighting) weighting)", xlabel=angle_label,
+        ax1 = latex_axis(fig[1, 1], xlabel=angle_label,
             ylabel=field_label(condition_name, metadata[condition_name]), yscale=log10)
         hm = heatmap!(ax1, angles, centers, permutedims(histogram); colormap=:viridis,
             nan_color=:white)
         latex_colorbar(fig[1, 2], hm, label="normalized gradient weight")
-        ax2 = latex_axis(fig[1, 3], title="Alignment parameter", xlabel=field_label(condition_name, metadata[condition_name]),
+        ax2 = latex_axis(fig[1, 3], xlabel=field_label(condition_name, metadata[condition_name]),
             ylabel=latexstring("\\zeta"), xscale=log10)
         hlines!(ax2, [0.0]; color=PLOT_MUTED, linestyle=:dash, linewidth=1.5)
         valid = findall(isfinite, zeta)
@@ -866,7 +877,6 @@ function plot_alignments!(files, fields, metadata, cfg, output_dir, formats, ove
                 color=(PLOT_PURPLE, 0.72), whiskerwidth=7, linewidth=1.3)
         end
         ylims!(ax2, -1.05, 1.05)
-        latex_layout_label(fig[0, :], replace(name, '_' => ' '); fontsize=22, tellwidth=false)
         save_figure!(files, fig, output_dir, "alignment_$(sanitize(name))", formats; overwrite)
         plot_ibanez_xi!(files, fields, metadata, cfg, spec, output_dir, formats, overwrite)
     end
@@ -884,7 +894,7 @@ function write_manifest!(files, cfg, output_dir, fields; overwrite=true, timings
         "fields" => sort!(collect(keys(fields))),
         "generated_files" => sort!(basename.(files)),
         "julia_version" => string(VERSION),
-        "cubeanalysis_version" => "0.2.0",
+        "cubeanalysis_version" => string(pkgversion(CubeAnalysis)),
         "package_versions" => Dict(
             "CairoMakie" => string(pkgversion(CairoMakie)),
             "FFTW" => string(pkgversion(FFTW)),
@@ -946,6 +956,18 @@ function run_analysis_config(cfg::AbstractDict)
             output_dir, formats, overwrite)))
     requested(cfg, "alignments") && push!(stages,
         ("alignments", () -> plot_alignments!(files, fields, metadata, cfg, output_dir, formats, overwrite)))
+    requested(cfg, "physics_table"; default=true) && push!(stages,
+        ("physics_table", () -> plot_physics_table!(files, fields, cfg, output_dir,
+            formats, overwrite)))
+    requested(cfg, "density_pdf"; default=true) && push!(stages,
+        ("density_pdf", () -> plot_density_pdf!(files, fields, cfg, output_dir,
+            formats, overwrite)))
+    requested(cfg, "phase_budget"; default=true) && push!(stages,
+        ("phase_budget", () -> plot_phase_budget!(files, fields, cfg, output_dir,
+            formats, overwrite)))
+    requested(cfg, "column_density_pdf"; default=true) && push!(stages,
+        ("column_density_pdf", () -> plot_column_density_pdf!(files, fields, metadata,
+            cfg, output_dir, formats, overwrite)))
     requested(cfg, "advanced_diagnostics") && push!(stages,
         ("advanced_diagnostics", () -> plot_advanced_diagnostics!(files, fields, metadata,
             cfg, output_dir, formats, overwrite)))

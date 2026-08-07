@@ -4,14 +4,16 @@ function directional_structure_functions(components; lags=nothing, orders=1:4,
     shape = size(first(components))
     all(size(component) == shape for component in components) ||
         error("Directional structure-function components must have equal sizes")
-    selected_lags = isnothing(lags) ? unique!(round.(Int,
-        10 .^ range(0, log10(max(1, minimum(shape) ÷ 4)); length=12))) : Int.(lags)
+    selected_lags = isnothing(lags) ?
+        default_structure_lags(shape, 4, 12) : Int.(lags)
     selected_orders = sort!(unique!(Int.(orders)))
     all(>(0), selected_lags) || error("Directional lags must be positive")
     all(>(0), selected_orders) || error("Structure-function orders must be positive")
     spacing = grid_spacings(first(components), box_size; axis_order)
-    rows = NamedTuple[]
-    for axis in 1:3, lag in selected_lags
+    tasks = [(axis, lag) for axis in 1:3 for lag in selected_lags]
+    collected = Vector{Union{Nothing,NamedTuple}}(nothing, length(tasks))
+    Threads.@threads for task_index in eachindex(tasks)
+        axis, lag = tasks[task_index]
         longitudinal = zeros(Float64, length(selected_orders))
         transverse = zeros(Float64, length(selected_orders))
         full = zeros(Float64, length(selected_orders))
@@ -43,11 +45,11 @@ function directional_structure_functions(components; lags=nothing, orders=1:4,
         variance = signed2 / count
         skewness = variance > 0 ? (signed3 / count) / variance^(3 / 2) : NaN
         flatness = variance > 0 ? (signed4 / count) / variance^2 : NaN
-        push!(rows, (axis=string(axis_order[axis]), lag_cells=lag,
+        collected[task_index] = (axis=string(axis_order[axis]), lag_cells=lag,
             separation=lag * spacing[axis], samples=count, orders=selected_orders,
-            longitudinal, transverse, full, skewness, flatness))
+            longitudinal, transverse, full, skewness, flatness)
     end
-    return rows
+    return NamedTuple[row for row in collected if !isnothing(row)]
 end
 
 function directional_scaling_exponents(rows, fit_range)
@@ -115,7 +117,7 @@ function plot_directional_structure!(files, fields, metadata, cfg, output_dir, f
         second_index = findfirst(==(2), orders)
         if !isnothing(second_index)
             fig = publication_figure(size=(940, 600)); ax = latex_axis(fig[1, 1], xscale=log10, yscale=log10,
-                xlabel="separation", ylabel="second-order increment", title=replace(name, '_' => ' '))
+                xlabel="separation", ylabel="second-order increment")
             for (axis_index, axis) in enumerate(axis_order)
                 selected = filter(row -> row.axis == axis, rows)
                 lines!(ax, getfield.(selected, :separation),

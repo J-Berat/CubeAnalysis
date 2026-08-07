@@ -286,8 +286,10 @@ function plot_ibanez_xi!(files, fields, metadata, cfg, spec, output_dir, formats
     return result
 end
 
+# xi is built from direction cosines and sigma_v from the velocity cubes alone,
+# so neither depends on box_size; it is kept for interface consistency.
 function plot_xi_vs_sigma_v!(files, simulation_dirs, output_dir, formats;
-        overwrite=false, box_size=(50.0, 50.0, 50.0), axis_order=("x", "y", "z"))
+        overwrite=false, box_size=(1.0, 1.0, 1.0), axis_order=("x", "y", "z"))
     pending_formats = overwrite ? collect(formats) : filter(formats) do format
         !isfile(joinpath(output_dir, "xi_vs_sigma_v.$(lowercase(string(format)))"))
     end

@@ -10,17 +10,15 @@ consistent scientific colors, quiet legends, and high-resolution exports.
 ## Installation
 
 ```bash
-cd "/Users/jb270005/Desktop"
 git clone https://github.com/J-Berat/CubeAnalysis.git
 cd CubeAnalysis
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
-To update an existing installation:
+Start Julia with several threads to use the parallel stages:
 
 ```bash
-cd "/Users/jb270005/Desktop/CubeAnalysis"
-git pull origin main
+export JULIA_NUM_THREADS=auto
 ```
 
 ## Required files
@@ -38,25 +36,27 @@ Vy.fits
 Vz.fits
 ```
 
-The RAMSES batch script expects `256 x 256 x 256` cubes and uses a
-`50 x 50 x 50 pc` box.
+The batch script reads the cube shape from the FITS header, and the physical
+box size from `CDELT`/`CD` when present. Pass `--box-pc` when the header carries
+no WCS scale.
 
 ## Analyze all simulations
 
 ```bash
-julia --startup-file=no --project=. scripts/run_simu_ramses.jl \
-  "/Users/jb270005/Desktop/simu_RAMSES" \
-  "/Users/jb270005/Desktop/simu_RAMSES/results/CubeAnalysis_final"
+julia --startup-file=no --project=. scripts/run_simu_ramses.jl <input_root> <output_root>
 ```
 
-Add `1` to process only the first simulation:
+`<input_root>` holds one subdirectory per simulation. Options:
 
-```bash
-julia --startup-file=no --project=. scripts/run_simu_ramses.jl \
-  "/Users/jb270005/Desktop/simu_RAMSES" \
-  "/Users/jb270005/Desktop/simu_RAMSES/results/CubeAnalysis_test" \
-  1
+```text
+--limit=N        only process the first N simulations
+--pattern=REGEX  only keep subdirectories whose name matches REGEX
+--box-pc=L       box size in parsecs when the FITS header has no WCS scale
+--config=PATH    base parameter file (default: config/cube_analysis.toml)
+--free-gib=X     stop when less than X GiB remain on the output volume
 ```
+
+Run `scripts/run_simu_ramses.jl` with no argument to print this list.
 
 Completed simulations are skipped. Because batch runs use `overwrite=false`,
 choose a new output directory when regenerating figures after a code change.
@@ -81,6 +81,12 @@ julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 - HRO and alignment parameters;
 - first-, second-, and third-order structure-function figures with inertial-range fits;
 - phase-conditioned velocity ESS exponents compared with turbulence models;
+- a summary table of the sonic and Alfvenic Mach numbers, the plasma beta and
+  the turbulent-to-ordered field ratios, volume- and mass-weighted;
+- the density PDF with its lognormal fit and the driving parameter `b`;
+- volume and mass filling factors per thermal phase;
+- the column-density PDF with a maximum-likelihood power-law tail fit;
+- the four Minkowski functionals of the density excursion sets;
 - autocorrelations and physical diagnostics.
 
 The ESS comparison uses the classical Kolmogorov scaling, the intermittent
@@ -97,6 +103,21 @@ Enable CSV and TOML outputs explicitly with:
 save_data = true
 ```
 
+## Spectra
+
+`spectra.quantity` selects the plotted normalisation. Bins are logarithmic in
+`k`, so the bin width grows like `k`:
+
+| value | quantity | Kolmogorov slope |
+| --- | --- | --- |
+| `energy` (default) | `E(k) = shell sum / dk` | `-5/3` |
+| `shell` | raw sum over the bin | `-2/3` |
+| `average` | power per Fourier mode | `-11/3` |
+
+Only `energy` is directly comparable with the Kolmogorov and Burgers reference
+lines. Fits are weighted by `sqrt(modes)`, and each point carries its Poisson
+error bar `E/sqrt(modes)`.
+
 ## Memory settings
 
 Recommended settings for large cubes:
@@ -111,6 +132,10 @@ atomic_directory = true
 
 `field_by_field=true` avoids keeping every field in memory. Set
 `memory_budget_gb = 0` to disable the memory limit.
+
+Cubes read from disk go through a least-recently-used cache, since one stage
+indexes the same field several times. It holds half of `memory_budget_gb` by
+default; `run.cache_gb` overrides that, and `0` disables caching.
 
 ## Alignment outputs
 

@@ -21,8 +21,10 @@ grid_box_lengths(cfg) = begin
     box_lengths(get(grid, "box_size", 1.0), get(grid, "axis_order", ["x", "y", "z"]))
 end
 
-grid_spacings(A, box_size=1.0; axis_order=("x", "y", "z")) =
-    ntuple(d -> box_lengths(box_size, axis_order)[d] / size(A, d), 3)
+function grid_spacings(A, box_size=1.0; axis_order=("x", "y", "z"))
+    lengths = box_lengths(box_size, axis_order)
+    return ntuple(d -> lengths[d] / size(A, d), 3)
+end
 
 function periodic_gradient(A, box_size=1.0; axis_order=("x", "y", "z"))
     dx, dy, dz = grid_spacings(A, box_size; axis_order)

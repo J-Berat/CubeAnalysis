@@ -1,6 +1,7 @@
 # All relative paths are resolved from this parameter file.
 [run]
-input_dir = "/Users/jb270005/Desktop/simu_RAMSES/d1cf05bx10rms18000nograv1024"
+# Relative to this file; point it at one directory of cubes.
+input_dir = "../data/example_simulation"
 output_dir = "../outputs/example"
 formats = ["png", "pdf"]
 overwrite = true
@@ -38,6 +39,10 @@ alignments = true
 vector_spectra = true
 cross_spectra = false
 advanced_diagnostics = true
+physics_table = true # Mach, Alfvenic Mach, beta, dB/|<B>|, dv/|<v>|
+density_pdf = true # lognormal fit and the driving parameter b
+phase_budget = true # volume and mass filling factors per thermal phase
+column_density_pdf = true # N-PDF with a power-law tail fit
 topology = false
 anisotropic_spectra = false
 directional_structure_functions = false
@@ -72,7 +77,10 @@ xlabel = "v"
 bins = 80
 remove_mean = true
 fields = ["density", "temperature", "Bmag", "Vmag"]
-quantity = "shell" # "shell" energy or per-mode "average"
+# "energy" is E(k) = shell sum / dk and is the only normalisation comparable
+# with the Kolmogorov k^-5/3 and Burgers k^-2 references, because the bins are
+# logarithmic. "shell" is the raw sum (slope +1); "average" is per mode (-2).
+quantity = "energy"
 compensation = 0.0
 fit_range = [0.2, 10.0]
 injection_modes = 4.0 # injection-dominated modes k/k_min <= 4
@@ -140,7 +148,9 @@ phase_ess_temperature = "temperature"
 phase_ess_velocity = ["Vx", "Vy", "Vz"]
 correlation_fields = ["density", "Bmag"]
 correlation_bins = 60
-physics = true
+density_pdf_bins = 80
+column_density_axes = ["x", "y", "z"]
+column_density_bins = 60
 density = "density"
 temperature = "temperature"
 velocity = ["Vx", "Vy", "Vz"]
