@@ -37,15 +37,17 @@ relations = true
 power_spectra = true
 alignments = true
 vector_spectra = true
-cross_spectra = false
+cross_spectra = true
 advanced_diagnostics = true
 physics_table = true # Mach, Alfvenic Mach, beta, dB/|<B>|, dv/|<v>|
 density_pdf = true # lognormal fit and the driving parameter b
 phase_budget = true # volume and mass filling factors per thermal phase
 column_density_pdf = true # N-PDF with a power-law tail fit
-topology = false
-anisotropic_spectra = false
-directional_structure_functions = false
+phase_diagnostics = true
+synthetic_observations = true
+topology = true
+anisotropic_spectra = true
+directional_structure_functions = true
 
 [slices]
 axes = ["x", "y", "z"]
@@ -90,6 +92,16 @@ window = "none"
 velocity_fields = ["Vmag"]
 velocity_reference_slopes = [-1.6666666667, -2.0]
 reference_range = [0.2, 10.0]
+auto_fit_range = true
+auto_fit_min_points = 6
+auto_fit_min_decades = 0.35
+auto_fit_min_r2 = 0.95
+
+[[cross_spectra]]
+name = "density_magnetic_magnitude"
+first = "density"
+second = "Bmag"
+bins = 80
 
 [[vector_spectra]]
 name = "magnetic"
@@ -123,6 +135,15 @@ components = ["Vx", "Vy", "Vz"]
 orders = [1, 2, 3, 4]
 fit_range = [0.2, 10.0]
 
+[[directional_structure_functions]]
+name = "density_weighted_velocity_directional"
+components = ["Vx", "Vy", "Vz"]
+weight_field = "density"
+weight_power = 0.3333333333333333
+orders = [1, 2, 3]
+fit_range = [0.2, 10.0]
+auto_fit_range = true
+
 [[topology]]
 name = "dense_gas_excursions"
 field = "density"
@@ -144,6 +165,7 @@ structure_samples = 100000
 phase_ess = true
 phase_ess_orders = [1, 2, 3, 4, 5]
 phase_ess_samples = 100000
+phase_ess_bootstrap_replicates = 200
 phase_ess_temperature = "temperature"
 phase_ess_velocity = ["Vx", "Vy", "Vz"]
 correlation_fields = ["density", "Bmag"]
@@ -151,6 +173,11 @@ correlation_bins = 60
 density_pdf_bins = 80
 column_density_axes = ["x", "y", "z"]
 column_density_bins = 60
+physics = true
+phase_diagnostics = true
+phase_increment_samples = 50000
+bootstrap_blocks_per_axis = 4
+bootstrap_replicates = 200
 density = "density"
 temperature = "temperature"
 velocity = ["Vx", "Vy", "Vz"]
@@ -158,6 +185,14 @@ magnetic = ["Bx", "By", "Bz"]
 mean_molecular_weight = 1.27
 velocity_to_cms = 1.0e5
 magnetic_to_gauss = 1.0e-3
+
+[synthetic_observations]
+density = "density"
+velocity = ["Vx", "Vy", "Vz"]
+magnetic = ["Bx", "By", "Bz"]
+lines_of_sight = ["x", "y", "z"]
+velocity_channels = 64
+linewidth_sizes = [4, 8, 16, 32, 64]
 
 [[diagnostics.phases]]
 name = "CNM"

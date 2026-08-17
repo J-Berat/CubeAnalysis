@@ -1,9 +1,11 @@
 function directional_structure_functions(components; lags=nothing, orders=1:4,
-        box_size=1.0, axis_order=("x", "y", "z"), periodic=true)
+        box_size=1.0, axis_order=("x", "y", "z"), periodic=true,
+        weight=nothing, weight_power=1 / 3)
     length(components) == 3 || error("Directional structure functions need three components")
     shape = size(first(components))
     all(size(component) == shape for component in components) ||
         error("Directional structure-function components must have equal sizes")
+    !isnothing(weight) && size(weight) != shape && error("Directional weight must match components")
     selected_lags = isnothing(lags) ?
         default_structure_lags(shape, 4, 12) : Int.(lags)
     selected_orders = sort!(unique!(Int.(orders)))
@@ -27,7 +29,10 @@ function directional_structure_functions(components; lags=nothing, orders=1:4,
             end
             target = axis == 1 ? (target_coordinate, j, k) :
                 axis == 2 ? (i, target_coordinate, k) : (i, j, target_coordinate)
-            delta = ntuple(d -> Float64(components[d][target...] - components[d][i, j, k]), 3)
+            first_weight = isnothing(weight) ? 1.0 : max(Float64(weight[i,j,k]),0.0)^weight_power
+            second_weight = isnothing(weight) ? 1.0 : max(Float64(weight[target...]),0.0)^weight_power
+            delta = ntuple(d -> second_weight*Float64(components[d][target...]) -
+                first_weight*Float64(components[d][i,j,k]), 3)
             all(isfinite, delta) || continue
             longitudinal_delta = delta[axis]
             transverse_delta = sqrt(sum(delta[d]^2 for d in 1:3 if d != axis))
@@ -77,9 +82,12 @@ function plot_directional_structure!(files, fields, metadata, cfg, output_dir, f
         all(haskey(fields, field) for field in component_names) ||
             error("Directional structure '$name' references missing fields")
         components = [fields[field] for field in component_names]
+        weight_name=get(spec,"weight_field",nothing)
+        weight=isnothing(weight_name) ? nothing : fields[string(weight_name)]
         rows = directional_structure_functions(components;
             lags=get(spec, "lags", nothing), orders=Int.(get(spec, "orders", [1, 2, 3, 4])),
-            box_size, axis_order, periodic)
+            box_size, axis_order, periodic, weight,
+            weight_power=Float64(get(spec,"weight_power",1/3)))
         isempty(rows) && (@warn "No directional increments" name; continue)
         orders = rows[1].orders
         if save_data(cfg)
@@ -101,7 +109,10 @@ function plot_directional_structure!(files, fields, metadata, cfg, output_dir, f
             push!(files, path)
         end
         separations = getfield.(rows, :separation)
-        fit_range = Float64.(get(spec, "fit_range", [minimum(separations), maximum(separations)]))
+        physical_fit_range = Float64.(get(spec, "fit_range", [minimum(separations), maximum(separations)]))
+        representative_index=argmin(abs.(orders .- 2))
+        representative=[row.full[representative_index] for row in rows]
+        fit_range=selected_fit_range(separations,representative,physical_fit_range,spec)
         fits = directional_scaling_exponents(rows, fit_range)
         if save_data(cfg)
             fit_path = joinpath(output_dir, "directional_structure_$(sanitize(name))_fits.csv")
@@ -114,22 +125,24 @@ function plot_directional_structure!(files, fields, metadata, cfg, output_dir, f
             end
             push!(files, fit_path)
         end
-        second_index = findfirst(==(2), orders)
-        if !isnothing(second_index)
-            fig = publication_figure(size=(940, 600)); ax = latex_axis(fig[1, 1], xscale=log10, yscale=log10,
-                xlabel="separation", ylabel="second-order increment")
+        if !isempty(orders)
+            fig = publication_figure(size=(430*length(orders), 540))
+            for (panel,order) in enumerate(orders)
+            order_index=findfirst(==(order),orders); ax = latex_axis(fig[1, panel], xscale=log10, yscale=log10,
+                xlabel=latexstring("\\ell\\ [\\mathrm{physical}]"), ylabel=latexstring("S_{",order,"}(\\ell)"))
             for (axis_index, axis) in enumerate(axis_order)
                 selected = filter(row -> row.axis == axis, rows)
                 lines!(ax, getfield.(selected, :separation),
-                    [row.longitudinal[second_index] for row in selected];
+                    [row.longitudinal[order_index] for row in selected];
                     color=series_color(axis_index), linewidth=2.6,
                     label=latex_legend_label("L, $axis"))
                 lines!(ax, getfield.(selected, :separation),
-                    [row.transverse[second_index] for row in selected];
+                    [row.transverse[order_index] for row in selected];
                     color=series_color(axis_index), linestyle=:dash, linewidth=2.2,
                     label=latex_legend_label("T, $axis"))
             end
-            publication_legend!(ax)
+            panel==1 && publication_legend!(ax)
+            end
             save_figure!(files, fig, output_dir, "directional_structure_$(sanitize(name))", formats; overwrite)
         end
     end

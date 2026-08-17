@@ -184,7 +184,8 @@ function phase_velocity_structure(vx, vy, vz, temperature, phases; orders=1:5,
     return selected_lags, selected_orders, values, counts
 end
 
-function ess_exponents(structure, orders, selected_lags, lag_range; minimum_samples=nothing)
+function ess_exponents(structure, orders, selected_lags, lag_range; minimum_samples=nothing,
+        bootstrap_replicates=0, seed=1234)
     third = findfirst(==(3), orders)
     isnothing(third) && error("ESS requires third-order structure functions")
     exponents = fill(NaN, length(orders)); uncertainties = similar(exponents)
@@ -214,6 +215,15 @@ function ess_exponents(structure, orders, selected_lags, lag_range; minimum_samp
         exponents[order_index]=slope
         uncertainties[order_index]=sqrt(sum(w .* abs2.(residual)) /
             (length(valid)-2) / denominator)
+        if bootstrap_replicates > 1
+            rng=MersenneTwister(seed+order_index); bootstrap=Float64[]
+            for _ in 1:bootstrap_replicates
+                selected=rand(rng,eachindex(x),length(x)); bx=x[selected]; by=y[selected]
+                bxmean=mean(bx); bymean=mean(by); bden=sum(abs2,bx.-bxmean)
+                bden>0 && push!(bootstrap,sum((bx.-bxmean).*(by.-bymean))/bden)
+            end
+            length(bootstrap)>1 && (uncertainties[order_index]=std(bootstrap;corrected=false))
+        end
     end
     return exponents, uncertainties, points
 end
@@ -241,7 +251,9 @@ function plot_phase_ess!(files, fields, cfg, settings, output_dir, formats, over
     phase_results = NamedTuple[]
     for (phase_index, phase) in enumerate(phases)
         exponents, errors, points = ess_exponents(values[:, phase_index, :], orders,
-            lags, lag_range; minimum_samples=counts[:, phase_index])
+            lags, lag_range; minimum_samples=counts[:, phase_index],
+            bootstrap_replicates=Int(get(settings,"phase_ess_bootstrap_replicates",200)),
+            seed=Int(get(settings,"seed",1234))+phase_index)
         valid = findall(isfinite, exponents)
         isempty(valid) && continue
         color=series_color(phase_index)
@@ -334,7 +346,7 @@ function plot_advanced_diagnostics!(files, fields, metadata, cfg, output_dir, fo
         separation, dissipation_scale, injection_scale, separation_label =
             structure_plot_scales(cube, lags, box_size, axis_order;
                 injection_modes, dissipation_cells, box_unit)
-        fit_range = [dissipation_scale, injection_scale]
+        physical_fit_range = [dissipation_scale, injection_scale]
         if save_data(cfg)
             path = joinpath(output_dir, "structure_$(sanitize(name)).csv")
             write_text_output(path; overwrite) do io
@@ -361,6 +373,8 @@ function plot_advanced_diagnostics!(files, fields, metadata, cfg, output_dir, fo
                 scatter!(axis, separation[valid], values[valid, column]; color=:white,
                     strokecolor=color, strokewidth=1.3, markersize=7,
                     marker=series_marker(column))
+                fit_range = selected_fit_range(separation, values[:, column],
+                    physical_fit_range, settings)
                 slope, _, _ = add_structure_fit!(axis, separation, values[:, column],
                     order, fit_range)
                 isfinite(slope) && publication_legend!(axis; position=:lt)

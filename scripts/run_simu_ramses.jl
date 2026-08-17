@@ -82,14 +82,11 @@ function configure(base, input_dir, output_dir; fallback_box_pc=DEFAULT_BOX_PC)
     plots = cfg["plots"]
     for name in ("summary", "quality", "slices", "projections", "histograms",
             "phase_diagrams", "relations", "power_spectra", "vector_spectra",
-            "cross_spectra", "alignments", "advanced_diagnostics", "physics_table")
+            "cross_spectra", "alignments", "advanced_diagnostics", "phase_diagnostics",
+            "synthetic_observations", "topology", "anisotropic_spectra",
+            "directional_structure_functions", "physics_table", "density_pdf",
+            "phase_budget", "column_density_pdf")
         plots[name] = true
-    end
-    for name in ("density_pdf", "phase_budget", "column_density_pdf")
-        plots[name] = true
-    end
-    for name in ("topology", "anisotropic_spectra", "directional_structure_functions")
-        plots[name] = false
     end
 
     selected = ["density", "temperature", "Bmag", "Vmag"]
@@ -114,6 +111,10 @@ function configure(base, input_dir, output_dir; fallback_box_pc=DEFAULT_BOX_PC)
     cfg["spectra"]["dissipation_cells"] = 4.0
     cfg["spectra"]["velocity_fields"] = ["Vmag"]
     cfg["spectra"]["velocity_reference_slopes"] = [-5 / 3, -2.0]
+    cfg["spectra"]["auto_fit_range"] = true
+    cfg["spectra"]["auto_fit_min_points"] = 6
+    cfg["spectra"]["auto_fit_min_decades"] = 0.35
+    cfg["spectra"]["auto_fit_min_r2"] = 0.95
     for spectrum in get(cfg, "vector_spectra", Any[])
         lowercase(string(get(spectrum, "name", ""))) == "velocity" || continue
         spectrum["reference_slopes"] = [-5 / 3, -2.0]
@@ -140,6 +141,10 @@ function configure(base, input_dir, output_dir; fallback_box_pc=DEFAULT_BOX_PC)
     diagnostics["structure_samples"] = 25_000
     diagnostics["correlation_fields"] = ["density", "Bmag"]
     diagnostics["correlation_bins"] = 60
+    diagnostics["physics"] = true
+    diagnostics["phase_diagnostics"] = true
+    diagnostics["phase_increment_samples"] = 25_000
+    cfg["synthetic_observations"]["velocity_channels"] = 64
     return cfg, shape, box_size
 end
 
@@ -322,6 +327,9 @@ function main(args)
         fallback_pc=fallback_box_pc)
     CubeAnalysis.plot_xi_vs_sigma_v!(xi_files, simulations, output_root, ["png"];
         overwrite=false, box_size=Tuple(reference_box), axis_order=("x", "y", "z"))
+    CubeAnalysis.plot_ensemble_comparison!(xi_files, simulations, output_root, ["png"];
+        overwrite=false, box_size=Tuple(reference_box), axis_order=("x", "y", "z"),
+        samples=20_000)
     ensemble = save_outputs ? write_ensemble_tables(output_root, simulations) : String[]
     @info "Batch finished" complete total=length(rows) report=(save_outputs ? report_path : "disabled") available_gib=available_gib(output_root)
     save_outputs && @info "Ensemble comparison tables" files=ensemble

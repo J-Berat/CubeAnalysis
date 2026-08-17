@@ -297,6 +297,40 @@ function inertial_fit_range(requested, shape, box_size, axis_order;
     return [max(limits[1], injection), min(limits[2], dissipation)]
 end
 
+"""Select the longest well-described power-law window inside physical bounds."""
+function detect_powerlaw_range(x, y, bounds; min_points=6, min_decades=0.35,
+        min_r2=0.95)
+    candidates = findall(i -> isfinite(x[i]) && x[i] > 0 && isfinite(y[i]) &&
+        y[i] > 0 && bounds[1] <= x[i] <= bounds[2], eachindex(x, y))
+    length(candidates) >= min_points || return Float64.(bounds)
+    lx = log10.(Float64.(x[candidates])); ly = log10.(Float64.(y[candidates]))
+    best = nothing
+    for first in 1:length(candidates)-min_points+1, last in first+min_points-1:length(candidates)
+        span = lx[last] - lx[first]; span >= min_decades || continue
+        xx = @view lx[first:last]; yy = @view ly[first:last]
+        xm, ym = mean(xx), mean(yy); denominator = sum(abs2, xx .- xm)
+        denominator > 0 || continue
+        slope = sum((xx .- xm) .* (yy .- ym)) / denominator
+        residual = yy .- (ym - slope * xm .+ slope .* xx)
+        total = sum(abs2, yy .- ym)
+        r2 = total > 0 ? 1 - sum(abs2, residual) / total : 1.0
+        r2 >= min_r2 || continue
+        score = (span, r2, last - first + 1)
+        (isnothing(best) || score > best.score) &&
+            (best=(score=score, first=first, last=last))
+    end
+    isnothing(best) && return Float64.(bounds)
+    return [Float64(x[candidates[best.first]]), Float64(x[candidates[best.last]])]
+end
+
+function selected_fit_range(x, y, physical_range, settings)
+    Bool(get(settings, "auto_fit_range", true)) || return physical_range
+    return detect_powerlaw_range(x, y, physical_range;
+        min_points=Int(get(settings, "auto_fit_min_points", 6)),
+        min_decades=Float64(get(settings, "auto_fit_min_decades", 0.35)),
+        min_r2=Float64(get(settings, "auto_fit_min_r2", 0.95)))
+end
+
 function reference_power_law(k, power, slope; k_range=nothing, offset=0.0)
     valid = findall(index -> isfinite(k[index]) && k[index] > 0 &&
         isfinite(power[index]) && power[index] > 0, eachindex(k, power))
@@ -520,8 +554,9 @@ function plot_spectra!(files, fields, metadata, cfg, output_dir, formats, overwr
         compensated = power .* result.k .^ compensation
         dissipation_cells = Float64(get(settings, "dissipation_cells", 4.0))
         injection_modes = Float64(get(settings, "injection_modes", 4.0))
-        fit_range = inertial_fit_range(get(settings, "fit_range", nothing),
+        physical_fit_range = inertial_fit_range(get(settings, "fit_range", nothing),
             shape, box_size, axis_order; injection_modes, dissipation_cells)
+        fit_range = selected_fit_range(result.k, power, physical_fit_range, settings)
         slope, slope_std, fit_modes = spectral_fit(result.k, power, fit_range;
             weights=sqrt.(result.modes))
         if save_data(cfg)

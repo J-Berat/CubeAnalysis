@@ -158,6 +158,15 @@ end
             fit_k, fit_power, [2.0, 3.0])
         @test inertial_slope ≈ -2.0
         @test inertial_points == 3
+        detector_x = 10.0 .^ range(-1, 2; length=40)
+        detector_y = detector_x .^ (-5 / 3)
+        detector_y[1:8] .= 1.0
+        detector_y[end-6:end] .= reverse(collect(1.0:7.0))
+        detected = CubeAnalysis.detect_powerlaw_range(detector_x, detector_y,
+            [detector_x[1], detector_x[end]]; min_points=6, min_decades=0.4,
+            min_r2=0.99)
+        @test detected[1] >= detector_x[8]
+        @test detected[2] <= detector_x[end-6]
         @test_throws ErrorException CubeAnalysis.injection_wavenumber(lengths; modes=0.5)
         @test_throws ErrorException CubeAnalysis.dissipation_wavenumber(shape, lengths;
             cells=1.5)
@@ -209,6 +218,23 @@ end
         x_rows = filter(row -> row.axis == "x", directional)
         @test all(row -> row.longitudinal[1] > 0, x_rows)
         @test all(row -> row.transverse[1] == 0, x_rows)
+        weighted_directional = CubeAnalysis.directional_structure_functions(
+            [sinusoid, zero_field, zero_field]; lags=[1], orders=[1, 2],
+            weight=fill(8.0f0, shape), weight_power=1/3,
+            box_size=(2π, 2π, 2π))
+        weighted_x = only(filter(row -> row.axis == "x", weighted_directional))
+        @test weighted_x.longitudinal[2] ≈ 4 * x_rows[1].longitudinal[1]
+
+        centroid, dispersion, column = CubeAnalysis.weighted_moment_maps(
+            ones(Float32,4,4,4), fill(3.0f0,4,4,4), 3)
+        @test all(centroid .≈ 3)
+        @test all(dispersion .≈ 0)
+        @test all(column .≈ 4)
+        ppv, channels = CubeAnalysis.ppv_cube(ones(Float32,4,4,4),
+            fill(2.0f0,4,4,4),3;channels=8)
+        @test size(ppv)==(4,4,8)
+        @test sum(ppv)≈64
+        @test length(channels)==8
 
         uniform_density = fill(2.0f0, 4, 5, 10)
         column_cfg = Dict("grid" => Dict("box_size" => [8.0, 10.0, 50.0],

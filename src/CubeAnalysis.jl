@@ -20,10 +20,13 @@ include("quality.jl")
 include("diagnostics.jl")
 include("physics_table.jl")
 include("pdf_statistics.jl")
+include("phase_diagnostics.jl")
+include("synthetic_observations.jl")
 include("topology.jl")
 include("anisotropy.jl")
 include("directional_structure.jl")
 include("ibanez_alignment.jl")
+include("ensemble.jl")
 
 export run_analysis, load_config, load_fields, read_cube, periodic_gradient, isotropic_spectrum
 
@@ -971,6 +974,12 @@ function run_analysis_config(cfg::AbstractDict)
     requested(cfg, "advanced_diagnostics") && push!(stages,
         ("advanced_diagnostics", () -> plot_advanced_diagnostics!(files, fields, metadata,
             cfg, output_dir, formats, overwrite)))
+    requested(cfg, "phase_diagnostics") && push!(stages,
+        ("phase_diagnostics", () -> plot_phase_diagnostics!(files, fields, metadata,
+            cfg, output_dir, formats, overwrite)))
+    requested(cfg, "synthetic_observations") && push!(stages,
+        ("synthetic_observations", () -> plot_synthetic_observations!(files, fields,
+            metadata, cfg, output_dir, formats, overwrite)))
     requested(cfg, "topology") && push!(stages,
         ("topology", () -> plot_topology!(files, fields, metadata, cfg,
             output_dir, formats, overwrite)))

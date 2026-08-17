@@ -80,6 +80,9 @@ julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 - spectral fits and Kolmogorov/Burgers references restricted to the inertial range;
 - HRO and alignment parameters;
 - first-, second-, and third-order structure-function figures with inertial-range fits;
+- automatic power-law window detection inside the physically allowed inertial range;
+- longitudinal and transverse velocity structure functions, including
+  density-weighted `rho^(1/3) v` increments;
 - phase-conditioned velocity ESS exponents compared with turbulence models;
 - a summary table of the sonic and Alfvenic Mach numbers, the plasma beta and
   the turbulent-to-ordered field ratios, volume- and mass-weighted;
@@ -87,7 +90,13 @@ julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 - volume and mass filling factors per thermal phase;
 - the column-density PDF with a maximum-likelihood power-law tail fit;
 - the four Minkowski functionals of the density excursion sets;
-- autocorrelations and physical diagnostics.
+- phase fractions, Mach numbers, plasma beta, magnetic intensity, and
+  block-bootstrap uncertainties;
+- increment PDFs, skewness, flatness, and sixth-order hyperflatness by phase;
+- cross-spectra, anisotropic spectra, and excursion-set topology;
+- synthetic PPV diagnostics, velocity centroids, line widths, linewidth-size
+  relations, column-density PDFs, and polarization maps;
+- autocorrelations, physical diagnostics, and cross-simulation comparison figures.
 
 The ESS comparison uses the classical Kolmogorov scaling, the intermittent
 [She--Leveque model](https://doi.org/10.1103/PhysRevLett.72.336), and the
