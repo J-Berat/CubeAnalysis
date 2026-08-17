@@ -60,7 +60,7 @@ end
 function phase_increment_statistics(vx,vy,vz,temperature,phases; lags=nothing,
         samples_per_lag=100_000,seed=1234,periodic=true)
     shape=size(vx); selected=isnothing(lags) ? unique!(round.(Int,10 .^ range(0,log10(max(1,minimum(shape)÷2));length=14))) : Int.(lags)
-    sums=zeros(Float64,length(selected),length(phases),5); counts=zeros(Int,length(selected),length(phases))
+    sums=zeros(Float64,length(selected),length(phases),3); counts=zeros(Int,length(selected),length(phases))
     pdf_samples=[Float64[] for _ in selected, _ in phases]; rng=MersenneTwister(seed)
     for (li,lag) in enumerate(selected), _ in 1:samples_per_lag
         axis=rand(rng,1:3); direction=rand(rng,Bool) ? lag : -lag
@@ -71,17 +71,17 @@ function phase_increment_statistics(vx,vy,vz,temperature,phases; lags=nothing,
         p==phase_index(T2,phases) || continue
         components=(vx,vy,vz); du=Float64(components[axis][target...]-components[axis][source...])
         isfinite(du) || continue
-        sums[li,p,1]+=du^2; sums[li,p,2]+=du^3; sums[li,p,3]+=du^4; sums[li,p,4]+=du^6; sums[li,p,5]+=abs(du)
+        sums[li,p,1]+=du^2; sums[li,p,2]+=du^3; sums[li,p,3]+=du^4
         counts[li,p]+=1
         length(pdf_samples[li,p])<5000 && push!(pdf_samples[li,p],du)
     end
-    skew=fill(NaN,length(selected),length(phases)); flat=copy(skew); hyper=copy(skew)
+    skew=fill(NaN,length(selected),length(phases)); flat=copy(skew)
     for li in eachindex(selected),p in eachindex(phases)
         n=counts[li,p]; n>2 || continue; m2=sums[li,p,1]/n
         m2>0 || continue; skew[li,p]=(sums[li,p,2]/n)/m2^1.5
-        flat[li,p]=(sums[li,p,3]/n)/m2^2; hyper[li,p]=(sums[li,p,4]/n)/m2^3
+        flat[li,p]=(sums[li,p,3]/n)/m2^2
     end
-    return selected,skew,flat,hyper,counts,pdf_samples
+    return selected,skew,flat,counts,pdf_samples
 end
 
 function plot_phase_diagnostics!(files,fields,metadata,cfg,output_dir,formats,overwrite)
@@ -108,11 +108,11 @@ function plot_phase_diagnostics!(files,fields,metadata,cfg,output_dir,formats,ov
     save_figure!(files,fig,output_dir,"phase_physical_diagnostics",formats;overwrite)
 
     phases=configured_thermal_phases(settings); names=string.(get(settings,"phase_ess_velocity",["Vx","Vy","Vz"])); temp=string(get(settings,"phase_ess_temperature","temperature"))
-    lags,skew,flat,hyper,_,pdfs=phase_increment_statistics((fields[n] for n in names)...,fields[temp],phases;
+    lags,skew,flat,_,pdfs=phase_increment_statistics((fields[n] for n in names)...,fields[temp],phases;
         samples_per_lag=Int(get(settings,"phase_increment_samples",50_000)),seed=Int(get(settings,"seed",1234)),periodic=Bool(get(get(cfg,"grid",Dict()),"periodic",true)))
     spacing=mean(grid_spacings(fields[names[1]],get(get(cfg,"grid",Dict()),"box_size",1.0);axis_order=string.(get(get(cfg,"grid",Dict()),"axis_order",["x","y","z"]))))
-    separation=lags.*spacing; fig=publication_figure(size=(1320,470))
-    for (panel,(values,label)) in enumerate(((skew,"\\mathcal{S}"),(flat,"\\mathcal{F}"),(hyper,"\\mathcal{H}_6")))
+    separation=lags.*spacing; fig=publication_figure(size=(920,470))
+    for (panel,(values,label)) in enumerate(((skew,"\\mathcal{S}"),(flat,"\\mathcal{F}")))
         ax=latex_axis(fig[1,panel],xlabel=latexstring("\\ell\\ [\\mathrm{pc}]"),ylabel=latexstring(label),xscale=log10)
         for p in eachindex(phases); lines!(ax,separation,values[:,p];color=series_color(p),linestyle=series_linestyle(p),linewidth=2.5,label=latex_legend_label(phases[p].name)); end
         panel==1 && publication_legend!(ax)

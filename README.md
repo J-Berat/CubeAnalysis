@@ -92,7 +92,7 @@ julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 - the four Minkowski functionals of the density excursion sets;
 - phase fractions, Mach numbers, plasma beta, magnetic intensity, and
   block-bootstrap uncertainties;
-- increment PDFs, skewness, flatness, and sixth-order hyperflatness by phase;
+- increment PDFs, skewness, and flatness by phase;
 - cross-spectra, anisotropic spectra, and excursion-set topology;
 - synthetic PPV diagnostics, velocity centroids, line widths, linewidth-size
   relations, column-density PDFs, and polarization maps;
