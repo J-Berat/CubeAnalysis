@@ -28,6 +28,22 @@ function ensemble_simulation_metrics(directory; box_size=(50.0,50.0,50.0),
         volume=getfield.(phase,:volume_fraction),mass=getfield.(phase,:mass_fraction))
 end
 
+function simulation_phase_ess_metrics(directory;samples=20_000)
+    readfield(name)=read_fits_cube(joinpath(directory,"$name.fits"))
+    temperature=readfield("temperature")
+    velocity=[readfield(name) for name in ("Vx","Vy","Vz")]
+    phases=default_thermal_phases()
+    lags,orders,values,counts=phase_velocity_structure(velocity...,temperature,phases;
+        orders=1:5,samples_per_lag=samples)
+    zeta=Vector{Float64}[]
+    for phase_index in eachindex(phases)
+        exponents,_,_=ess_exponents(values[:,phase_index,:],orders,lags,
+            [4,minimum(size(temperature))÷4];minimum_samples=counts[:,phase_index])
+        push!(zeta,exponents)
+    end
+    return (name=basename(directory),zeta)
+end
+
 function ensemble_ess_summary(metrics, phase_index, orders=1:5)
     matrix=fill(NaN,length(metrics),length(orders))
     for (simulation_index,metric) in enumerate(metrics)
@@ -88,9 +104,20 @@ function plot_ensemble_comparison!(files,directories,output_dir,formats;overwrit
         @info "Ensemble comparison figures already exist; skipping" output_dir
         return files
     end
+    physical_missing=overwrite || any(format->!isfile(joinpath(output_dir,
+        "ensemble_physical_scaling.$format")),formats)
+    fractions_missing=overwrite || any(format->!isfile(joinpath(output_dir,
+        "ensemble_phase_fractions.$format")),formats)
+    ess_missing=overwrite || any(format->!isfile(joinpath(output_dir,
+        "ensemble_phase_ess.$format")),formats)
+    if ess_missing && !physical_missing && !fractions_missing
+        metrics=[simulation_phase_ess_metrics(directory;samples) for directory in directories]
+        plot_ensemble_phase_ess!(files,metrics,output_dir,formats;overwrite)
+        return files
+    end
     metrics=[ensemble_simulation_metrics(directory;box_size,axis_order,samples) for directory in directories]
     sort!(metrics;by=x->x.sigma_v); x=getfield.(metrics,:sigma_v)
-    if overwrite || any(format->!isfile(joinpath(output_dir,"ensemble_physical_scaling.$format")),formats)
+    if physical_missing
         fig=publication_figure(size=(1320,800)); quantities=((:mach_sonic,"\\mathcal{M}_{\\mathrm{s}}"),(:mach_alfven,"\\mathcal{M}_{\\mathrm{A}}"),(:plasma_beta,"\\beta"),(:spectral_slope,"\\alpha_v"),(:correlation_length,"\\ell_{\\mathrm{corr}}\\ [\\mathrm{pc}]"))
         for (panel,(key,label)) in enumerate(quantities)
             ax=latex_axis(fig[cld(panel,3),mod1(panel,3)],xlabel=latexstring("\\sigma_v\\ [\\mathrm{km\\,s^{-1}}]"),ylabel=latexstring(label),xscale=log10)
@@ -99,7 +126,7 @@ function plot_ensemble_comparison!(files,directories,output_dir,formats;overwrit
         save_figure!(files,fig,output_dir,"ensemble_physical_scaling",formats;overwrite)
     end
     phases=default_thermal_phases()
-    if overwrite || any(format->!isfile(joinpath(output_dir,"ensemble_phase_fractions.$format")),formats)
+    if fractions_missing
         fig=publication_figure(size=(1280,520))
         for (panel,(key,label)) in enumerate(((:volume,"f_{\\mathrm{V}}"),(:mass,"f_{\\mathrm{M}}")))
             ax=latex_axis(fig[1,panel],xlabel=latexstring("\\sigma_v\\ [\\mathrm{km\\,s^{-1}}]"),ylabel=latexstring(label),xscale=log10)
@@ -108,7 +135,7 @@ function plot_ensemble_comparison!(files,directories,output_dir,formats;overwrit
         end
         save_figure!(files,fig,output_dir,"ensemble_phase_fractions",formats;overwrite)
     end
-    if overwrite || any(format->!isfile(joinpath(output_dir,"ensemble_phase_ess.$format")),formats)
+    if ess_missing
         plot_ensemble_phase_ess!(files,metrics,output_dir,formats;overwrite)
     end
     return files
