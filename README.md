@@ -97,8 +97,6 @@ julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
 - synthetic PPV diagnostics, velocity centroids, line widths, linewidth-size
   relations, column-density PDFs, and polarization maps;
 - autocorrelations and physical diagnostics;
-- `ensemble_phase_ess.png`, combining every RAMSES simulation with individual
-  curves, ensemble means, standard deviations, and turbulence-model references;
 - cross-simulation comparison figures.
 
 The ESS comparison uses the classical Kolmogorov scaling, the intermittent
