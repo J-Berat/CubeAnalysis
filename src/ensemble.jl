@@ -15,44 +15,101 @@ function ensemble_simulation_metrics(directory; box_size=(50.0,50.0,50.0),
     slope,_,_=spectral_fit(spectrum.k,spectrum.shell,range)
     _,_,_,correlation_length=radial_autocorrelation(density;bins=40,box_size,axis_order)
     phases=default_thermal_phases(); lags,orders,values,counts=phase_velocity_structure(velocity...,temperature,phases;orders=1:5,samples_per_lag=samples)
-    zeta2=Float64[]
+    zeta=Vector{Float64}[]
     for p in eachindex(phases)
         exponents,_,_=ess_exponents(values[:,p,:],orders,lags,[4,minimum(size(density))÷4];minimum_samples=counts[:,p])
-        push!(zeta2,exponents[2])
+        push!(zeta,exponents)
     end
     global_ms=median(filter(isfinite,vcat([fill(row.mach_sonic,max(row.samples,1)) for row in phase]...)))
     global_ma=median(filter(isfinite,vcat([fill(row.mach_alfven,max(row.samples,1)) for row in phase]...)))
     global_beta=median(filter(isfinite,vcat([fill(row.plasma_beta,max(row.samples,1)) for row in phase]...)))
     return (name=basename(directory),sigma_v=sigma,mach_sonic=global_ms,mach_alfven=global_ma,
-        plasma_beta=global_beta,spectral_slope=slope,correlation_length,zeta2,
+        plasma_beta=global_beta,spectral_slope=slope,correlation_length,zeta,
         volume=getfield.(phase,:volume_fraction),mass=getfield.(phase,:mass_fraction))
+end
+
+function ensemble_ess_summary(metrics, phase_index, orders=1:5)
+    matrix=fill(NaN,length(metrics),length(orders))
+    for (simulation_index,metric) in enumerate(metrics)
+        values=metric.zeta[phase_index]
+        for order_index in eachindex(orders)
+            order_index<=length(values) && (matrix[simulation_index,order_index]=values[order_index])
+        end
+    end
+    center=fill(NaN,length(orders)); spread=fill(NaN,length(orders)); samples=zeros(Int,length(orders))
+    for order_index in eachindex(orders)
+        valid=filter(isfinite,matrix[:,order_index]); samples[order_index]=length(valid)
+        isempty(valid) && continue
+        center[order_index]=mean(valid)
+        spread[order_index]=length(valid)>1 ? std(valid;corrected=true) : 0.0
+    end
+    return matrix,center,spread,samples
+end
+
+function plot_ensemble_phase_ess!(files,metrics,output_dir,formats;overwrite=false)
+    phases=default_thermal_phases(); orders=collect(1:5)
+    fig=publication_figure(size=(980,680)); axis=latex_axis(fig[1,1],
+        xlabel=latexstring("p"),ylabel=latexstring("\\zeta_p/\\zeta_3\\ (\\mathrm{ESS})"),
+        xticks=orders)
+    for phase_index in eachindex(phases)
+        matrix,center,spread,_=ensemble_ess_summary(metrics,phase_index,orders)
+        color=series_color(phase_index); marker=series_marker(phase_index)
+        for simulation_index in axes(matrix,1)
+            valid=findall(index->isfinite(matrix[simulation_index,index]),eachindex(orders))
+            length(valid)>=2 || continue
+            lines!(axis,orders[valid],matrix[simulation_index,valid];color=(color,0.18),
+                linewidth=1.0,linestyle=series_linestyle(phase_index))
+        end
+        valid=findall(isfinite,center); isempty(valid) && continue
+        lines!(axis,orders[valid],center[valid];color,linewidth=2.9,
+            label=latex_legend_label(phases[phase_index].name))
+        scatter!(axis,orders[valid],center[valid];color=:white,strokecolor=color,
+            strokewidth=1.7,markersize=10,marker)
+        errorbars!(axis,orders[valid],center[valid],spread[valid];color=(color,0.78),
+            linewidth=1.3,whiskerwidth=8)
+    end
+    order_values=Float64.(orders)
+    lines!(axis,order_values,kolmogorov_ess.(order_values);color=PLOT_INK,
+        linestyle=:dash,linewidth=2.0,label=latex_legend_label("Kolmogorov"))
+    lines!(axis,order_values,she_leveque_ess.(order_values);color=PLOT_MUTED,
+        linestyle=:dot,linewidth=2.2,label=latex_legend_label("She-Leveque"))
+    lines!(axis,order_values,boldyrev_ess.(order_values);color=PLOT_INK,
+        linestyle=:dashdot,linewidth=2.0,label=latex_legend_label("Boldyrev"))
+    publication_legend!(axis;position=:lt)
+    save_figure!(files,fig,output_dir,"ensemble_phase_ess",formats;overwrite)
+    return files
 end
 
 function plot_ensemble_comparison!(files,directories,output_dir,formats;overwrite=false,
         box_size=(50.0,50.0,50.0),axis_order=("x","y","z"),samples=20_000)
-    targets=[joinpath(output_dir,"$stem.$format") for stem in
-        ("ensemble_physical_scaling","ensemble_phase_fractions","ensemble_phase_zeta2") for format in formats]
+    stems=("ensemble_physical_scaling","ensemble_phase_fractions","ensemble_phase_ess")
+    targets=[joinpath(output_dir,"$stem.$format") for stem in stems for format in formats]
     if !overwrite && all(isfile,targets)
         @info "Ensemble comparison figures already exist; skipping" output_dir
         return files
     end
     metrics=[ensemble_simulation_metrics(directory;box_size,axis_order,samples) for directory in directories]
     sort!(metrics;by=x->x.sigma_v); x=getfield.(metrics,:sigma_v)
-    fig=publication_figure(size=(1320,800)); quantities=((:mach_sonic,"\\mathcal{M}_{\\mathrm{s}}"),(:mach_alfven,"\\mathcal{M}_{\\mathrm{A}}"),(:plasma_beta,"\\beta"),(:spectral_slope,"\\alpha_v"),(:correlation_length,"\\ell_{\\mathrm{corr}}\\ [\\mathrm{pc}]"))
-    for (panel,(key,label)) in enumerate(quantities)
-        ax=latex_axis(fig[cld(panel,3),mod1(panel,3)],xlabel=latexstring("\\sigma_v\\ [\\mathrm{km\\,s^{-1}}]"),ylabel=latexstring(label),xscale=log10)
-        values=getfield.(metrics,key); lines!(ax,x,values;color=series_color(panel),linewidth=2.5);scatter!(ax,x,values;color=:white,strokecolor=series_color(panel),strokewidth=1.4,markersize=9)
+    if overwrite || any(format->!isfile(joinpath(output_dir,"ensemble_physical_scaling.$format")),formats)
+        fig=publication_figure(size=(1320,800)); quantities=((:mach_sonic,"\\mathcal{M}_{\\mathrm{s}}"),(:mach_alfven,"\\mathcal{M}_{\\mathrm{A}}"),(:plasma_beta,"\\beta"),(:spectral_slope,"\\alpha_v"),(:correlation_length,"\\ell_{\\mathrm{corr}}\\ [\\mathrm{pc}]"))
+        for (panel,(key,label)) in enumerate(quantities)
+            ax=latex_axis(fig[cld(panel,3),mod1(panel,3)],xlabel=latexstring("\\sigma_v\\ [\\mathrm{km\\,s^{-1}}]"),ylabel=latexstring(label),xscale=log10)
+            values=getfield.(metrics,key); lines!(ax,x,values;color=series_color(panel),linewidth=2.5);scatter!(ax,x,values;color=:white,strokecolor=series_color(panel),strokewidth=1.4,markersize=9)
+        end
+        save_figure!(files,fig,output_dir,"ensemble_physical_scaling",formats;overwrite)
     end
-    save_figure!(files,fig,output_dir,"ensemble_physical_scaling",formats;overwrite)
-    phases=default_thermal_phases(); fig=publication_figure(size=(1280,520))
-    for (panel,(key,label)) in enumerate(((:volume,"f_{\\mathrm{V}}"),(:mass,"f_{\\mathrm{M}}")))
-        ax=latex_axis(fig[1,panel],xlabel=latexstring("\\sigma_v\\ [\\mathrm{km\\,s^{-1}}]"),ylabel=latexstring(label),xscale=log10)
-        for p in eachindex(phases); values=[getfield(row,key)[p] for row in metrics];lines!(ax,x,values;color=series_color(p),linestyle=series_linestyle(p),linewidth=2.5,label=latex_legend_label(phases[p].name));scatter!(ax,x,values;color=series_color(p),marker=series_marker(p),markersize=8);end
-        panel==1&&publication_legend!(ax)
+    phases=default_thermal_phases()
+    if overwrite || any(format->!isfile(joinpath(output_dir,"ensemble_phase_fractions.$format")),formats)
+        fig=publication_figure(size=(1280,520))
+        for (panel,(key,label)) in enumerate(((:volume,"f_{\\mathrm{V}}"),(:mass,"f_{\\mathrm{M}}")))
+            ax=latex_axis(fig[1,panel],xlabel=latexstring("\\sigma_v\\ [\\mathrm{km\\,s^{-1}}]"),ylabel=latexstring(label),xscale=log10)
+            for p in eachindex(phases); values=[getfield(row,key)[p] for row in metrics];lines!(ax,x,values;color=series_color(p),linestyle=series_linestyle(p),linewidth=2.5,label=latex_legend_label(phases[p].name));scatter!(ax,x,values;color=series_color(p),marker=series_marker(p),markersize=8);end
+            panel==1&&publication_legend!(ax)
+        end
+        save_figure!(files,fig,output_dir,"ensemble_phase_fractions",formats;overwrite)
     end
-    save_figure!(files,fig,output_dir,"ensemble_phase_fractions",formats;overwrite)
-    fig=publication_figure();ax=latex_axis(fig[1,1],xlabel=latexstring("\\sigma_v\\ [\\mathrm{km\\,s^{-1}}]"),ylabel=latexstring("\\zeta_2/\\zeta_3"),xscale=log10)
-    for p in eachindex(phases); values=[row.zeta2[p] for row in metrics]; lines!(ax,x,values;color=series_color(p),linestyle=series_linestyle(p),linewidth=2.4,label=latex_legend_label(phases[p].name));scatter!(ax,x,values;color=series_color(p),marker=series_marker(p),markersize=9);end
-    publication_legend!(ax);save_figure!(files,fig,output_dir,"ensemble_phase_zeta2",formats;overwrite)
+    if overwrite || any(format->!isfile(joinpath(output_dir,"ensemble_phase_ess.$format")),formats)
+        plot_ensemble_phase_ess!(files,metrics,output_dir,formats;overwrite)
+    end
     return files
 end

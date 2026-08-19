@@ -194,6 +194,16 @@ end
         @test CubeAnalysis.kolmogorov_ess(3) ≈ 1.0
         @test CubeAnalysis.she_leveque_ess(3) ≈ 1.0
         @test CubeAnalysis.boldyrev_ess(3) ≈ 1.0
+        ensemble_metrics = [
+            (zeta=[[0.4, 0.7, 1.0, 1.25, 1.45], [0.42, 0.72, 1.0, 1.22, 1.40], [0.39, 0.69, 1.0, 1.27, 1.50]],),
+            (zeta=[[0.5, 0.8, 1.0, 1.30, 1.55], [0.44, 0.74, 1.0, 1.24, 1.44], [0.41, 0.71, 1.0, 1.29, 1.54]],),
+        ]
+        ensemble_matrix, ensemble_center, ensemble_spread, ensemble_samples =
+            CubeAnalysis.ensemble_ess_summary(ensemble_metrics, 1)
+        @test size(ensemble_matrix) == (2, 5)
+        @test ensemble_center[3] ≈ 1.0
+        @test ensemble_spread[1] > 0
+        @test ensemble_samples == fill(2, 5)
         phase_lags, phase_orders, phase_structure, phase_counts =
             CubeAnalysis.phase_velocity_structure(sinusoid, zero_field, zero_field,
                 fill(8000.0f0, size(sinusoid)), CubeAnalysis.default_thermal_phases();
