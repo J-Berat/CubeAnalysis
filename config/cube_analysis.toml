@@ -315,10 +315,6 @@ x = "density"
 y = "Bmag"
 bins = 30
 minimum_per_bin = 100
-weighting = "uniform" # or "gradient"
-angle_coordinate = "cosine" # or "degrees"
-bootstrap_replicates = 200
-bootstrap_seed = 1234
 log_x = true
 log_y = true
 

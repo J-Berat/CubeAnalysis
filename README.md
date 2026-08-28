@@ -1,13 +1,10 @@
 # CubeAnalysis
 
-Automated analysis of 3D FITS and HDF5 cubes with Julia.
+Automated analysis of 3-D FITS and HDF5 cubes with Julia: projections,
+histograms, phase diagrams, power spectra, structure functions, PDFs and
+magnetic-field alignment diagnostics, all in one publication-ready style.
 
-CubeAnalysis generates projections, histograms, phase diagrams, power spectra,
-structure functions, and magnetic-field alignment diagnostics.
-All figures share a publication-ready visual style with LaTeX typography,
-consistent scientific colors, quiet legends, and high-resolution exports.
-
-## Installation
+## Installation and use
 
 ```bash
 git clone https://github.com/J-Berat/CubeAnalysis.git
@@ -15,146 +12,171 @@ cd CubeAnalysis
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
-Start Julia with several threads to use the parallel stages:
+Several stages are threaded, so start Julia with more than one thread:
 
 ```bash
 export JULIA_NUM_THREADS=auto
 ```
 
-## Required files
+To analyse one cube, set `input_dir` and `output_dir` in the parameter file and
+run:
 
-Each RAMSES simulation must contain:
-
-```text
-density.fits
-temperature.fits
-Bx.fits
-By.fits
-Bz.fits
-Vx.fits
-Vy.fits
-Vz.fits
+```bash
+julia --startup-file=no --project=. bin/analyze_cube.jl config/cube_analysis.toml
 ```
 
-The batch script reads the cube shape from the FITS header, and the physical
-box size from `CDELT`/`CD` when present. Pass `--box-pc` when the header carries
-no WCS scale.
+Only figures are written by default; set `run.save_data = true` for the CSV and
+TOML tables. Tests:
 
-## Analyze all simulations
+```bash
+julia --startup-file=no --project=. -e 'using Pkg; Pkg.test()'
+```
+
+## Several simulations
 
 ```bash
 julia --startup-file=no --project=. scripts/run_simu_ramses.jl <input_root> <output_root>
 ```
 
-`<input_root>` holds one subdirectory per simulation. Options:
+`<input_root>` holds one subdirectory per simulation, each containing
+`density.fits`, `temperature.fits`, `Bx.fits`, `By.fits`, `Bz.fits`,
+`Vx.fits`, `Vy.fits` and `Vz.fits`. Incomplete directories are skipped with a
+warning, and simulations already analysed are left untouched.
 
-```text
---limit=N        only process the first N simulations
---pattern=REGEX  only keep subdirectories whose name matches REGEX
---box-pc=L       box size in parsecs when the FITS header has no WCS scale
---config=PATH    base parameter file (default: config/cube_analysis.toml)
---free-gib=X     stop when less than X GiB remain on the output volume
-```
+| Option | Effect |
+| --- | --- |
+| `--limit=N` | only process the first `N` simulations |
+| `--pattern=REGEX` | only keep subdirectories whose name matches `REGEX` |
+| `--box-pc=L` | box size in parsecs when the FITS header carries no WCS scale |
+| `--config=PATH` | base parameter file (default `config/cube_analysis.toml`) |
+| `--free-gib=X` | stop when less than `X` GiB remain on the output volume |
 
-Run `scripts/run_simu_ramses.jl` with no argument to print this list.
+Run the script without arguments to print this list. The cube shape comes from
+the FITS header, and the physical box size from `CDELT`/`CD` when present.
 
-Completed simulations are skipped. Because batch runs use `overwrite=false`,
-choose a new output directory when regenerating figures after a code change.
+Batch runs use `overwrite = false`, so pick a new output directory when
+regenerating figures after a code change. Per-simulation tables are also
+concatenated into `ensemble_*.csv` files at the root of `<output_root>`.
 
-## Analyze one cube
+## Parameter file
 
-Set `input_dir` and `output_dir` in `config/cube_analysis.toml`, then run:
+All relative paths resolve from the parameter file itself. `[run]`, `[fields]`
+and at least one plot are required; everything else has defaults.
 
-```bash
-julia --project=. bin/analyze_cube.jl config/cube_analysis.toml
-```
+### `[run]`
 
-## Main outputs
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `input_dir`, `output_dir` | — | required |
+| `formats` | `["png"]` | any of `png`, `pdf`, `svg` |
+| `overwrite` | `true` | fail instead of replacing existing outputs when `false` |
+| `atomic_directory` | `false` | build in a staging directory and publish at the end |
+| `save_data` | `false` | also write the CSV and TOML tables |
+| `sample_stride` | `1` | keep one cell in `N` for statistics |
+| `field_by_field` | `false` | read cubes on demand instead of all at once |
+| `memory_budget_gb` | `0` | `0` disables the limit; stages fail early above it |
+| `cache_gb` | half the budget | LRU cache for cubes read from disk; `0` disables it |
 
-- slices and projections, including column density;
-- grouped `Bx, By, Bz` and `Vx, Vy, Vz` histograms;
-- phase diagrams with thermal equilibrium and isotherms;
-- scalar, magnetic, kinetic, velocity, and vorticity spectra;
-- solenoidal and compressive spectral components;
-- separated injection, inertial, and numerical-dissipation ranges;
-- spectral fits and Kolmogorov/Burgers references restricted to the inertial range;
-- HRO and alignment parameters;
-- first-, second-, and third-order structure-function figures with inertial-range fits;
-- automatic power-law window detection inside the physically allowed inertial range;
-- longitudinal and transverse velocity structure functions, including
-  density-weighted `rho^(1/3) v` increments;
-- phase-conditioned velocity ESS exponents compared with turbulence models;
-- a summary table of the sonic and Alfvenic Mach numbers, the plasma beta and
-  the turbulent-to-ordered field ratios, volume- and mass-weighted;
-- the density PDF with its lognormal fit and the driving parameter `b`;
-- volume and mass filling factors per thermal phase;
-- the column-density PDF with a maximum-likelihood power-law tail fit;
-- the four Minkowski functionals of the density excursion sets;
-- phase fractions, Mach numbers, plasma beta, magnetic intensity, and
-  block-bootstrap uncertainties;
-- increment PDFs, skewness, and flatness by phase;
-- cross-spectra, anisotropic spectra, and excursion-set topology;
-- synthetic PPV diagnostics, velocity centroids, line widths, linewidth-size
-  relations, column-density PDFs, and polarization maps;
-- autocorrelations and physical diagnostics;
-- cross-simulation comparison figures.
+For large cubes, `field_by_field = true` with `memory_budget_gb = 12`,
+`sample_stride = 16` and `atomic_directory = true` is a sane starting point.
 
-The ESS comparison uses the classical Kolmogorov scaling, the intermittent
-[She--Leveque model](https://doi.org/10.1103/PhysRevLett.72.336), and the
-supersonic [Boldyrev model](https://doi.org/10.1086/340758).
+### `[grid]`
 
-Figures have no titles or grid lines. Text, ticks, legends, and colorbar labels
-use LaTeX. Only figures are saved by default.
+`box_size` (scalar or three values), `axis_order` (default `["x","y","z"]`),
+`box_unit` (`pc`, `kpc`, `au`, `m`, `cm` — used for column density), and
+`periodic` (default `true`), which selects periodic gradients and the default
+spectral window.
 
-Enable CSV and TOML outputs explicitly with:
+### `[render]`
+
+`width`, `height`, `fontsize`, `colormap`, and `quantile_low` / `quantile_high`
+for the colour range of slices and projections (defaults `0.005` / `0.995`).
+
+### `[plots]`
+
+One boolean per stage. Enabled by default: `physics_table`, `density_pdf`,
+`phase_budget`, `column_density_pdf`, plus `summary` and `quality`, which write
+tables and therefore only run when `save_data = true`.
+
+Off by default: `slices`, `projections`, `histograms`, `phase_diagrams`,
+`relations`, `power_spectra`, `vector_spectra`, `cross_spectra`, `alignments`,
+`advanced_diagnostics`, `topology`, `anisotropic_spectra`,
+`directional_structure_functions`.
+
+Stages needing fields the cube does not have are skipped with a message rather
+than failing.
+
+### `[fields.<name>]` and `[derived]`
+
+Each field points at one cube:
 
 ```toml
-[run]
-save_data = true
+[fields.density]
+file = "density.fits"     # required
+label = "number density"
+unit = "cm^-3"
+log = true                 # logarithmic colour scale and histograms
+colormap = "magma"
 ```
 
-## Spectra
+`permutation` (e.g. `[3, 2, 1]`), `scale` and `offset` apply to both formats;
+`dataset` and `chunk_mb` are HDF5-only.
 
-`spectra.quantity` selects the plotted normalisation. Bins are logarithmic in
-`k`, so the bin width grows like `k`:
+`[[derived.vectors]]` builds a magnitude from three components
+(`name`, `components`, `factor`); `[[derived.products]]` multiplies fields
+(`name`, `factors`, `factor`). Both accept the same display keys as a field.
 
-| value | quantity | Kolmogorov slope |
+### `[spectra]`
+
+`fields`, `bins`, `remove_mean`, `compensation`, `window` (`none` or `hann`),
+`fit_range`, `reference_range`, `velocity_fields`,
+`velocity_reference_slopes`, plus `injection_modes` and `dissipation_cells`,
+which set the shaded injection and dissipation ranges and clip every fit to the
+inertial range.
+
+`quantity` selects the normalisation. Bins are logarithmic in `k`, so the bin
+width grows like `k`:
+
+| Value | Quantity | Kolmogorov slope |
 | --- | --- | --- |
 | `energy` (default) | `E(k) = shell sum / dk` | `-5/3` |
 | `shell` | raw sum over the bin | `-2/3` |
 | `average` | power per Fourier mode | `-11/3` |
 
-Only `energy` is directly comparable with the Kolmogorov and Burgers reference
-lines. Fits are weighted by `sqrt(modes)`, and each point carries its Poisson
-error bar `E/sqrt(modes)`.
+Only `energy` is comparable with the Kolmogorov and Burgers reference lines.
+Fits are weighted by `sqrt(modes)` and each point carries a Poisson error bar.
 
-## Memory settings
+### `[diagnostics]`
 
-Recommended settings for large cubes:
+Field names (`density`, `temperature`, `velocity`, `magnetic`) and the unit
+conversions used by the physics table: `mean_molecular_weight`,
+`velocity_to_cms`, `magnetic_to_gauss`, `gamma`.
 
-```toml
-[run]
-field_by_field = true
-memory_budget_gb = 12
-sample_stride = 16
-atomic_directory = true
-```
+Structure functions: `structure_fields`, `structure_orders`,
+`structure_samples`, `seed`. Phase-conditioned ESS: `phase_ess`,
+`phase_ess_orders`, `phase_ess_samples`, `phase_ess_velocity`,
+`phase_ess_temperature`. PDFs: `density_pdf_bins`, `column_density_axes`,
+`column_density_bins`. Autocorrelation: `correlation_fields`,
+`correlation_bins`.
 
-`field_by_field=true` avoids keeping every field in memory. Set
-`memory_budget_gb = 0` to disable the memory limit.
+`[[diagnostics.phases]]` defines the thermal phases (`name`,
+`temperature_min`, `temperature_max`) used by both the ESS and the phase
+budget; the default is CNM / UNM / WNM.
 
-Cubes read from disk go through a least-recently-used cache, since one stage
-indexes the same field several times. It holds half of `memory_budget_gb` by
-default; `run.cache_gb` overrides that, and `0` disables caching.
+### Array-of-table sections
 
-## Alignment outputs
+Each entry below is a `[[...]]` block with a `name`.
 
-- `alignment_*.png` contains the configurable HRO and alignment parameter.
-- `xi_*.png` uses 40 cosine bins, with `|cos(phi)| >= 0.75` for parallel
-  orientations and `|cos(phi)| <= 0.25` for perpendicular orientations.
-
-## Tests
-
-```bash
-julia --startup-file=no --project=. -e 'using Pkg; Pkg.test()'
-```
+| Section | Key keys |
+| --- | --- |
+| `[[vector_spectra]]` | `components`, `bins`, `transform` (`none`/`curl`), `weight_field`, `weight_power`, `reference_slopes`, `reference_range` |
+| `[[cross_spectra]]` | `first`, `second`, `bins` |
+| `[[phase_diagrams]]` | `x`, `y`, `bins`, `log_x`, `log_y`, `thermal_overlay` (`none`/`temperature`/`pressure`), `isotherms`, `isotherm_colors` |
+| `[[relations]]` | `x`, `y`, `bins`, `minimum_per_bin`, `log_x`, `log_y`, `stride`, `mask_field`, `weight_field` |
+| `[[alignments]]` | `scalar`, `vector`, `condition`, `condition_bins`, `angle_bins`, `weighting` (`uniform`/`gradient`), `angle_coordinate` (`cosine`/`degrees`), `bootstrap_replicates` |
+| `[[alignments]]` (xi) | `xi_plot`, `velocity_vector`, `xi_bins`, `xi_density_range`, `xi_blocks_per_axis`, `xi_cosine_bins`, `xi_parallel_cosine`, `xi_perpendicular_cosine` |
+| `[[topology]]` | `field`, `quantiles` or `thresholds`, `above` |
+| `[[anisotropic_spectra]]` | `field`, `direction` or `guide_fields`, `parallel_bins`, `perpendicular_bins`, `radial_bins` |
+| `[[directional_structure_functions]]` | `components`, `orders`, `lags`, `fit_range` |
+| `[[histograms.groups]]` | `fields`, `xlabel` |
+| `[[snapshots]]` | `input_dir`, `time`, `output_subdir` — analyses a time series and writes `snapshot_evolution.csv` |
