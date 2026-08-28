@@ -52,6 +52,13 @@ end
     @test CubeAnalysis.phase_isotherm_colors(Dict(), 3) == [:yellow, :orange, :red]
     @test CubeAnalysis.phase_isotherm_colors(
         Dict("isotherm_colors" => ["red", "orange"]), 3) == [:red, :orange, :red]
+    @test CubeAnalysis.transformed_sample([1.0, 10.0, -1.0], true, 1) == [0.0, 1.0]
+    @test CubeAnalysis.transformed_map([1.0 10.0; 0.0 Inf], true)[1, :] == [0.0, 1.0]
+    @test isnan(CubeAnalysis.transformed_map([1.0 10.0; 0.0 Inf], true)[2, 1])
+    repaired = Float32[1, NaN, 3]
+    @test CubeAnalysis.replace_nonfinite_with_mean!(repaired) === repaired
+    @test repaired == Float32[1, 2, 3]
+    @test_throws ErrorException CubeAnalysis.replace_nonfinite_with_mean!(fill(NaN32, 2))
     uniform_weights = ones(Float32, 4, 4, 4)
     vx_test = [Float32(i) for i in 1:4, _ in 1:4, _ in 1:4]
     zeros_test = zeros(Float32, 4, 4, 4)
