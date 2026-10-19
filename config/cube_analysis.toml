@@ -64,6 +64,7 @@ column_density_fields = ["density"]
 bins = 80
 normalize = true
 # Optional: fields = ["density", "temperature", "Bmag", "Vmag"]
+# Optional: linear_and_log = true puts the linear PDF next to the log one for log fields
 
 [[histograms.groups]]
 name = "magnetic_components"

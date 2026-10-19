@@ -276,6 +276,10 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
     settings = get(cfg, "histograms", Dict())
     bins = Int(get(settings, "bins", 80))
     normalize = Bool(get(settings, "normalize", true))
+    # For logarithmic fields, also show the PDF of the linear values next to the log one.
+    linear_and_log = Bool(get(settings, "linear_and_log", false))
+    render = get(cfg, "render", Dict())
+    ylabel = normalize ? "probability density" : "cells"
     for name in selected_fields(settings, fields)
         meta = metadata[name]
         sampled = sampled_field(fields, name; stride, positive=meta.logscale)
@@ -283,11 +287,22 @@ function plot_histograms!(files, fields, metadata, cfg, output_dir, formats, ove
         values = meta.logscale ? log10.(sampled) : sampled
         centers, counts, width = histogram_counts(values, bins)
         normalize && (counts ./= sum(counts) * width)
-        fig = publication_figure()
-        ax = latex_axis(fig[1, 1],
+        two_panels = linear_and_log && meta.logscale
+        fig = two_panels ? publication_figure(size=(1300, 560)) : publication_figure()
+        log_column = two_panels ? 2 : 1
+        if two_panels
+            # Linear PDF over the robust range, so the long tail does not squash every bin.
+            lo, hi = robust_range(sampled, render)
+            kept = filter(value -> lo <= value <= hi, sampled)
+            lin_centers, lin_counts, lin_width = histogram_counts(kept, bins)
+            normalize && (lin_counts ./= length(sampled) * lin_width)
+            ax_lin = latex_axis(fig[1, 1], xlabel=field_label(name, meta), ylabel=ylabel)
+            barplot!(ax_lin, lin_centers, lin_counts; width=0.94lin_width,
+                color=(PLOT_BLUE, 0.78), strokecolor=PLOT_BLUE, strokewidth=0.7)
+        end
+        ax = latex_axis(fig[1, log_column],
             xlabel=(meta.logscale ? "log10 " : "") * field_label(name, meta),
-            ylabel=normalize ? "probability density" : "cells",
-            xlogcoordinates=meta.logscale)
+            ylabel=ylabel, xlogcoordinates=meta.logscale)
         barplot!(ax, centers, counts; width=0.94width, color=(PLOT_BLUE, 0.78),
             strokecolor=PLOT_BLUE, strokewidth=0.7)
         save_figure!(files, fig, output_dir, "histogram_$(sanitize(name))", formats; overwrite)

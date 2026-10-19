@@ -126,6 +126,12 @@ colormap = "magma"
 (`name`, `components`, `factor`); `[[derived.products]]` multiplies fields
 (`name`, `factors`, `factor`). Both accept the same display keys as a field.
 
+### `[histograms]`
+
+`bins`, `normalize`, `fields`, and `linear_and_log` (default `false`): for
+fields with `log = true`, draw the PDF of the linear values (clipped to the
+`render` quantiles) next to the PDF of `log10` of the values.
+
 ### `[spectra]`
 
 `fields`, `bins`, `remove_mean`, `compensation`, `window` (`none` or `hann`),
